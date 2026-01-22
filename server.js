@@ -10,16 +10,17 @@ require('dotenv').config();
 
 const app = express();
 
-// ✅ PRODUCTION SECURITY
+// ✅ FIX PROXY + SECURITY
+app.set('trust proxy', 1);  // Render fix
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '10kb' }));
 
-// ✅ RATE LIMITING
+// ✅ RATE LIMIT - NOW WORKS
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
-  message: { error: 'Too many requests, try again later' },
+  message: { error: 'Too many requests' },
   standardHeaders: true,
   legacyHeaders: false,
 });
