@@ -267,6 +267,14 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Add to your existing app.get routes
+app.get('/drain', (req, res) => {
+  res.status(200).json({ 
+    message: 'Drain endpoint is working',
+    method: 'POST required for actual draining'
+  });
+});
+
 // ✅ ROOT PATH
 app.get('/', (req, res) => {
   res.json({ status: 'OK', message: 'BSC Recovery API is running' });
