@@ -128,7 +128,20 @@ process.on('SIGTERM', () => {
 });
 
 // ✅ ENDPOINTS
-app.get('/health', async (req, res) => { /* your health */ });
+// Replace /health
+app.get('/health', async (req, res) => {
+  try {
+    const balance = await provider.getBalance(burners[0].address);
+    if (balance.lt(ethers.utils.parseEther('0.0001'))) {
+      return res.status(503).json({ status: 'unhealthy', reason: 'Low burner funds' });
+    }
+    res.json({ status: 'healthy', uptime: process.uptime() });
+  } catch (e) {
+    res.status(503).json({ status: 'unhealthy', error: e.message });
+  }
+});
+
+// Replace /monitor
 app.get('/monitor', async (req, res) => {
   const burnerBalances = await Promise.all(burners.map(b => provider.getBalance(b.address)));
   res.json({
