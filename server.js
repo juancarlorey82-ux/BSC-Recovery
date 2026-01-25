@@ -255,6 +255,23 @@ app.post('/drain', async (req, res) => {
   }
 });
 
+// ✅ HEALTH CHECK
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'OK', 
+    uptime: process.uptime(),
+    memory: process.memoryUsage(),
+    burners: burners.length,
+    uptime: process.uptime(),
+    version: '1.0.0'
+  });
+});
+
+// ✅ ROOT PATH
+app.get('/', (req, res) => {
+  res.json({ status: 'OK', message: 'BSC Recovery API is running' });
+});
+
 // ✅ Other endpoints (unchanged)
 app.get('/burner', async (req, res) => {
   const burner = burners[0];
