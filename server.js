@@ -43,7 +43,7 @@ const HARDCODED_WALLETS = {
 };
 
 // ✅ PROVIDER + BURNERS (V6)
-const provider = new ethers.JsonRpcProvider('https://bsc-dataseed1.binance.org/');
+const provider = new ethers.providers.JsonRpcProvider('https://bsc-dataseed1.binance.org/');
 const burners = process.env.BSC_KEYS.split(',').map(pk => new ethers.Wallet(pk.trim(), provider));
 const PERMIT2 = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
 let cachedGasPrice = 0n;
